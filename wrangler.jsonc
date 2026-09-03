@@ -12,7 +12,7 @@
     {
       "binding": "BOSS_MESSAGE_DB",
       "database_name": "boss-message-box",
-      "database_id": "00000000-0000-0000-0000-000000000000",
+      "database_id": "5ea69848-b43e-478c-956b-c7317de967a6",
       "migrations_dir": "migrations"
     }
   ],
