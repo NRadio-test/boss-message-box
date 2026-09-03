@@ -625,7 +625,11 @@ dialog::backdrop { background: var(--color-backdrop); }
   border-radius: var(--radius-control);
   background: var(--color-success-surface);
 }
-.reply-block > div { display: flex; align-items: center; gap: var(--space-2); color: var(--color-success); font-weight: 720; }
+.reply-list { display: grid; gap: var(--space-3); margin-block-start: var(--space-5); }
+.reply-list .reply-block { margin-block-start: 0; }
+.reply-block > div { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--space-2); color: var(--color-success); font-weight: 720; }
+.reply-block > div > span { display: inline-flex; align-items: center; gap: var(--space-2); }
+.reply-block > div > span:last-child { color: var(--color-text-muted); font-size: var(--type-caption); font-weight: 550; }
 .reply-block p { margin-block-start: var(--space-2); color: var(--color-text); white-space: pre-wrap; }
 
 .success-page {

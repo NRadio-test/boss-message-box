@@ -28,31 +28,33 @@ export function UserDetailPage() {
   const location = useLocation();
   const navigate = useNavigate();
   const state = location.state as UserLocationState | null;
-  const [result, setResult] = useState<StudioUserDetailSuccess | null>(null);
+  const [loaded, setLoaded] = useState<{ userId: string; result: StudioUserDetailSuccess } | null>(null);
+  const result = loaded?.userId === userId ? loaded.result : null;
   const [error, setError] = useState<string | null>(null);
   const [reload, setReload] = useState(0);
-  const [fullPhone, setFullPhone] = useState<string | null>(null);
+  const [revealedPhone, setRevealedPhone] = useState<{ userId: string; phone: string } | null>(null);
   const [revealing, setRevealing] = useState(false);
 
   useEffect(() => {
     const controller = new AbortController();
-    setError(null);
     getStudioUser(userId, controller.signal)
-      .then(setResult)
+      .then((value) => {
+        setLoaded({ userId, result: value });
+        setError(null);
+      })
       .catch((reason) => {
         if (!controller.signal.aborted) setError(reason instanceof Error ? reason.message : "用户信息加载失败");
       });
     return () => controller.abort();
   }, [reload, userId]);
 
-  useEffect(() => setFullPhone(null), [liveMode, userId]);
-
   const reveal = async () => {
+    const fullPhone = !liveMode && revealedPhone && revealedPhone.userId === userId ? revealedPhone.phone : null;
     if (liveMode || fullPhone || revealing) return;
     setRevealing(true);
     setError(null);
     try {
-      setFullPhone((await revealStudioPhone(userId)).phone);
+      setRevealedPhone({ userId, phone: (await revealStudioPhone(userId)).phone });
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : "手机号暂时无法显示");
     } finally {
@@ -71,10 +73,11 @@ export function UserDetailPage() {
     else navigate(`/studio/unreplied${liveMode ? "?mode=live" : ""}`);
   };
 
-  if (error && !result) return <div className="studio-page"><StudioError message={error} onRetry={() => setReload((value) => value + 1)} /></div>;
+  if (error && !result) return <div className="studio-page"><StudioError message={error} onRetry={() => { setError(null); setLoaded(null); setReload((value) => value + 1); }} /></div>;
   if (!result) return <StudioLoading label="正在加载用户信息" />;
 
   const currentUrl = `${location.pathname}${location.search}`;
+  const fullPhone = !liveMode && revealedPhone && revealedPhone.userId === userId ? revealedPhone.phone : null;
   return (
     <div className="studio-page studio-user-page">
       <header className="studio-detail-heading">

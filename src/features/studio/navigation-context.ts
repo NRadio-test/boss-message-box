@@ -3,7 +3,7 @@ export interface StudioReturnContext {
   anchorId?: string;
   neighborIds?: string[];
   anchorOffset?: number;
-  search?: { query: string; page: number };
+  search?: { query: string; page: number; snapshot?: { createdAt: number; id: string } | null };
 }
 
 const LIVE_RETURN_KEY = "boss-message-box:studio:live-return:v1";

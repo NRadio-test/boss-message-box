@@ -1,5 +1,5 @@
 import { ArrowLeft, ArrowRight, BellSimple } from "@phosphor-icons/react";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useLocation, useOutletContext, useSearchParams } from "react-router-dom";
 import type {
   StudioFeedbackListSuccess,
@@ -37,18 +37,33 @@ export function FeedbackListPage({ view }: { view: StudioFeedbackView }) {
   const [reload, setReload] = useState(0);
   const [todoBusy, setTodoBusy] = useState<string | null>(null);
   const [newCount, setNewCount] = useState(0);
-  const [snapshot, setSnapshot] = useState<StudioSnapshot | null>(null);
   const scrollAfterLoad = useRef(false);
   const restoreContext = (location.state as ListLocationState | null)?.restoreContext ?? null;
   const restoredRef = useRef(false);
 
+  const snapshotCreatedAt = Number(searchParams.get("snapshotAt"));
+  const snapshotId = searchParams.get("snapshotId");
+  const searchString = searchParams.toString();
+  const snapshot = useMemo<StudioSnapshot | null>(
+    () =>
+      Number.isSafeInteger(snapshotCreatedAt) && snapshotCreatedAt >= 0 && snapshotId
+        ? { createdAt: snapshotCreatedAt, id: snapshotId }
+        : null,
+    [snapshotCreatedAt, snapshotId],
+  );
+
   useEffect(() => {
     const controller = new AbortController();
-    setError(null);
-    getStudioFeedbacks(view, page, controller.signal)
+    getStudioFeedbacks(view, page, snapshot, controller.signal)
       .then((value) => {
         setResult(value);
-        setSnapshot((current) => current ?? value.snapshot);
+        setError(null);
+        if (!snapshot && value.snapshot) {
+          const next = new URLSearchParams(searchString);
+          next.set("snapshotAt", String(value.snapshot.createdAt));
+          next.set("snapshotId", value.snapshot.id);
+          setSearchParams(next, { replace: true });
+        }
         if (scrollAfterLoad.current) {
           scrollAfterLoad.current = false;
           requestAnimationFrame(() => document.getElementById("studio-list-heading")?.scrollIntoView());
@@ -61,7 +76,7 @@ export function FeedbackListPage({ view }: { view: StudioFeedbackView }) {
         if (!controller.signal.aborted) setError(reason instanceof Error ? reason.message : "留言列表加载失败");
       });
     return () => controller.abort();
-  }, [page, reload, restoreContext, view]);
+  }, [page, reload, restoreContext, searchString, setSearchParams, snapshot, view]);
 
   useEffect(() => {
     if (view !== "unreplied" || !snapshot) return;
@@ -91,13 +106,12 @@ export function FeedbackListPage({ view }: { view: StudioFeedbackView }) {
   const showNewest = () => {
     scrollAfterLoad.current = true;
     setNewCount(0);
-    setSnapshot(null);
-    if (page === 1) setReload((value) => value + 1);
-    else {
-      const next = new URLSearchParams(searchParams);
-      next.delete("page");
-      setSearchParams(next);
-    }
+    const next = new URLSearchParams(searchParams);
+    next.delete("page");
+    next.delete("snapshotAt");
+    next.delete("snapshotId");
+    if (page === 1 && !snapshot) setReload((value) => value + 1);
+    else setSearchParams(next);
   };
 
   const toggleTodo = async (item: StudioFeedbackSummary) => {
@@ -138,7 +152,7 @@ export function FeedbackListPage({ view }: { view: StudioFeedbackView }) {
         </div>
       )}
 
-      {error && <StudioError message={error} onRetry={() => setReload((value) => value + 1)} />}
+      {error && <StudioError message={error} onRetry={() => { setError(null); setResult(null); setReload((value) => value + 1); }} />}
       {!error && !result && <StudioLoading label="正在加载留言" />}
       {!error && result?.items.length === 0 && <StudioEmpty title="这里暂时是空的" description={copy.empty} />}
       {!error && result && result.items.length > 0 && (

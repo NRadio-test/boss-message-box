@@ -1,4 +1,4 @@
-import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 import type { StudioAdmin, StudioMode } from "../../shared/studio-contracts";
 import {
   getStudioSession,
@@ -7,17 +7,7 @@ import {
   StudioApiError,
   updateStudioMode,
 } from "./api";
-
-interface StudioSessionValue {
-  status: "loading" | "authenticated" | "anonymous";
-  admin: StudioAdmin | null;
-  mode: StudioMode;
-  login: (username: string, password: string) => Promise<void>;
-  logout: () => Promise<void>;
-  setMode: (mode: StudioMode) => Promise<void>;
-}
-
-const StudioSessionContext = createContext<StudioSessionValue | null>(null);
+import { StudioSessionContext, type StudioSessionValue } from "./session-context";
 
 export function StudioSessionProvider({ children }: { children: ReactNode }) {
   const [status, setStatus] = useState<StudioSessionValue["status"]>("loading");
@@ -84,10 +74,4 @@ export function StudioSessionProvider({ children }: { children: ReactNode }) {
   );
 
   return <StudioSessionContext.Provider value={value}>{children}</StudioSessionContext.Provider>;
-}
-
-export function useStudioSession(): StudioSessionValue {
-  const value = useContext(StudioSessionContext);
-  if (!value) throw new Error("StudioSessionProvider is missing");
-  return value;
 }

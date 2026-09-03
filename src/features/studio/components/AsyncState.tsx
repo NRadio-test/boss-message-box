@@ -1,4 +1,4 @@
-import { ArrowClockwise, Inbox } from "@phosphor-icons/react";
+import { ArrowClockwise, Tray } from "@phosphor-icons/react";
 import { Button } from "../../../components/Button";
 
 export function StudioLoading({ label = "正在加载" }: { label?: string }) {
@@ -13,7 +13,7 @@ export function StudioLoading({ label = "正在加载" }: { label?: string }) {
 export function StudioEmpty({ title, description }: { title: string; description: string }) {
   return (
     <div className="studio-empty">
-      <Inbox aria-hidden="true" weight="duotone" />
+      <Tray aria-hidden="true" weight="duotone" />
       <h2>{title}</h2>
       <p>{description}</p>
     </div>

@@ -43,7 +43,7 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
   const body = (await response.json().catch(() => null)) as T | ErrorResponse | null;
   if (!response.ok || !body) {
     if (response.status === 401) window.dispatchEvent(new Event("studio:unauthorized"));
-    const error = body && "error" in body ? body.error : undefined;
+    const error = body && typeof body === "object" && "error" in body ? body.error : undefined;
     throw new StudioApiError(
       error?.message ?? "网络连接不稳定，请稍后重试",
       response.status,
@@ -85,18 +85,24 @@ export function getStudioStats(signal?: AbortSignal): Promise<StudioStatsSuccess
 export function getStudioFeedbacks(
   view: StudioFeedbackView,
   page: number,
+  snapshot?: StudioSnapshot | null,
   signal?: AbortSignal,
 ): Promise<StudioFeedbackListSuccess> {
   const query = new URLSearchParams({ view, page: String(page) });
+  if (snapshot) {
+    query.set("snapshotCreatedAt", String(snapshot.createdAt));
+    query.set("snapshotId", snapshot.id);
+  }
   return request(`/api/studio/feedbacks?${query}`, { signal });
 }
 
 export function searchStudioFeedbacks(
   query: string,
   page: number,
+  snapshot?: StudioSnapshot | null,
   signal?: AbortSignal,
 ): Promise<StudioSearchSuccess> {
-  return request("/api/studio/search", { ...jsonInit("POST", { query, page }), signal });
+  return request("/api/studio/search", { ...jsonInit("POST", { query, page, snapshot }), signal });
 }
 
 export function getStudioFeedback(
@@ -137,8 +143,8 @@ export function getNewStudioFeedbackCount(
   signal?: AbortSignal,
 ): Promise<StudioNewFeedbackCountSuccess> {
   const query = new URLSearchParams({
-    sinceCreatedAt: String(snapshot.createdAt),
-    sinceId: snapshot.id,
+    afterCreatedAt: String(snapshot.createdAt),
+    afterId: snapshot.id,
   });
   return request(`/api/studio/new-feedback-count?${query}`, { signal });
 }

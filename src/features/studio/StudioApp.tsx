@@ -6,7 +6,8 @@ import { FeedbackListPage } from "./pages/FeedbackListPage";
 import { LoginPage } from "./pages/LoginPage";
 import { SearchPage } from "./pages/SearchPage";
 import { UserDetailPage } from "./pages/UserDetailPage";
-import { StudioSessionProvider, useStudioSession } from "./session";
+import { StudioSessionProvider } from "./session";
+import { useStudioSession } from "./use-studio-session";
 import "./studio.css";
 
 function SessionGate() {

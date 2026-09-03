@@ -1,6 +1,6 @@
 # 老板留言箱
 
-面向抖音直播观众的移动优先留言应用。V1 只包含两件事：提交留言，以及使用手机号和抖音昵称查询自己的留言。前端与 API 由同一个 Cloudflare Worker 提供，结构化数据进入 D1，处理后的图片进入私有 R2。
+面向抖音直播观众的移动优先留言应用，并在同一 Worker 内提供仅供内部人员使用的 Studio 工作台。公开端负责提交和查询自己的留言；管理员手动访问 `/studio` 处理留言。结构化数据进入 D1，处理后的图片进入私有 R2。
 
 ## 已实现的产品边界
 
@@ -13,6 +13,16 @@
 - D1 写入使用原子批处理。R2 与 D1 的跨服务失败由持久化清理队列补偿，每 15 分钟先确认对象未被留言引用，再安全删除。
 
 核心业务依赖端口定义在 `worker/core/ports.ts`。D1、R2、Cloudflare Images、Turnstile 与阿里云号码认证服务 PNVS 只是当前适配器，未来替换数据库、对象存储或短信商时不需要重写表单和业务规则。
+
+## Studio 工作台
+
+Studio 没有公开入口，管理员需要直接访问 `https://message.fallaxaura.com/studio`。它与公开端共用 Worker、D1、R2 和用户/留言模型，但前端路由、API、会话和样式均独立隔离。工作台包含未回复、全部已回复、直播回复、留言回复、待办、统一搜索、留言详情、用户详情和直播展示模式。
+
+固定账号为 `zd`、`mm`、`fa`、`ceshi`，四个账号权限完全相同，当前初始密码均为 `admin`。迁移只写入带独立随机盐的 PBKDF2-SHA256 哈希，不保存密码明文；登录 Cookie 为 30 天固定有效期的 `HttpOnly; Secure; SameSite=Strict` 会话，D1 只保存随机 token 的 SHA-256 摘要。`admin` 只是当前明确指定的初始密码，强度很低，不应把 Studio 暴露给不受信任人员；后续更换密码应通过新的 D1 migration 更新哈希，不要修改已经应用的迁移文件。
+
+手机号默认只返回 `1**********`，完整号码只能由普通 Studio 会话通过服务端 AES-GCM 解密接口取得。进入直播展示模式时，会话本身会切换成 `live`，服务端直接拒绝完整手机号接口，并强制所有新增回复为直播回复。R2 对象仍不公开，图片查看和下载都通过已认证的同源 Worker 接口完成。
+
+`migrations/0002_studio.sql` 会新增管理员、会话、多回复、待办和轻量审计表，并把旧单条回复安全迁入新表；旧 `livestream` 类型会映射为 `live`，旧 `pending_resolution` 会保留为待办，缺少历史管理员来源的回复不会伪造归属。同时，这个迁移会重建 `feedback_images`，移除遗留的 2 MiB 数据库约束。
 
 ## 本地运行
 
@@ -40,6 +50,8 @@ pnpm dev
 
 开发环境使用 Cloudflare 官方 Turnstile 测试密钥和固定验证码 `123456`。这个固定值只有 `APP_ENV=development` 时才会注入；即使生产环境误配了 `DEV_OTP_CODE`，代码也会忽略它，且 `mock` Provider 在 `production` 会被直接拒绝。
 
+Studio 不需要新增环境变量或 Secret；它继续复用现有 `PHONE_HASH_KEY`、`PHONE_ENCRYPTION_KEY` 与 `RATE_LIMIT_HMAC_KEY`。本地迁移完成后可直接使用上述四个账号和初始密码登录。
+
 完整验证命令是：
 
 ```bash
@@ -61,14 +73,14 @@ pnpm run check
 3. Cloudflare Images。项目使用 `IMAGES` binding 做服务端真实解码和重编码，不是公开图片托管。
 4. 名为 `boss-message-box` 的 Worker。Worker 名称应与 `wrangler.jsonc` 的 `name` 一致。
 
-配置文件已声明这些 binding 和每 15 分钟执行一次的图片补偿任务。第一次部署前应用远程迁移：
+配置文件已声明这些 binding 和每 15 分钟执行一次的图片补偿、过期 Studio 会话清理任务。部署包含 Studio 的代码前，必须先备份 D1 并应用远程迁移：
 
 ```bash
 pnpm exec wrangler login
 pnpm run db:migrate:remote
 ```
 
-迁移命令以 binding 名 `BOSS_MESSAGE_DB` 为目标；不要把 `--remote` 漏掉，也不要在尚未备份生产数据时改写已经执行过的迁移文件。
+迁移命令以 binding 名 `BOSS_MESSAGE_DB` 为目标；不要把 `--remote` 漏掉，也不要在尚未备份生产数据时改写已经执行过的迁移文件。确认 `0002_studio.sql` 成功后再发布新 Worker，否则新代码查询多回复表时会失败。
 
 ### 2. 配置 Turnstile 和非敏感变量
 
@@ -134,7 +146,8 @@ Turnstile secret 不要写进 Git，它属于下一步的运行时 Secret。
 ## 目录说明
 
 - `src/`：React 用户界面、草稿、图片压缩与共享校验契约
-- `worker/`：Hono API、领域服务、Cloudflare/阿里云适配器
+- `src/features/studio/`：独立的 Studio 路由、会话、工作台页面和作用域样式
+- `worker/`：Hono API、领域服务、Studio 安全边界及 Cloudflare/阿里云适配器
 - `migrations/`：可维护的 D1 SQL 迁移
 - `tests/unit/`：契约、加密、草稿、表单、短信异常和图片补偿测试
 - `tests/worker/`：真实 workerd + D1 的迁移和仓库集成测试

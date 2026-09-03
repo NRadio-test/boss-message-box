@@ -35,7 +35,7 @@ app.use("/api/*", secureHeaders());
 app.use("/api/*", async (context, next) => {
   context.set("requestId", crypto.randomUUID());
   await next();
-  context.header("Cache-Control", "no-store");
+  if (!context.res.headers.has("Cache-Control")) context.header("Cache-Control", "no-store");
   context.header("X-Request-Id", context.get("requestId"));
 });
 

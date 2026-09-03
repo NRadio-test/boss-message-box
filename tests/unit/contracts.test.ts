@@ -5,6 +5,11 @@ import {
   phoneSchema,
   TOPIC_VALUES,
 } from "../../src/shared/contracts";
+import {
+  studioLoginSchema,
+  studioReplyCreateSchema,
+  studioSearchSchema,
+} from "../../src/shared/studio-contracts";
 
 const base = {
   submissionKey: "2e7aa396-82af-4a10-b1d0-69cd587df44f",
@@ -38,5 +43,12 @@ describe("shared validation", () => {
     expect(phoneSchema.parse("+86 138-0013-8000")).toBe("13800138000");
     expect(phoneSchema.safeParse("85366123456").success).toBe(false);
     expect(historyQuerySchema.safeParse({ phone: "13800138000", nickname: " 昵称 " }).success).toBe(true);
+  });
+
+  it("validates Studio credentials, search input, and the 2000-character reply boundary", () => {
+    expect(studioLoginSchema.parse({ username: " ZD ", password: "admin" }).username).toBe("zd");
+    expect(studioSearchSchema.safeParse({ query: "13906325777", page: 1 }).success).toBe(true);
+    expect(studioReplyCreateSchema.safeParse({ replyType: "message", content: "字".repeat(2000) }).success).toBe(true);
+    expect(studioReplyCreateSchema.safeParse({ replyType: "live", content: "字".repeat(2001) }).success).toBe(false);
   });
 });

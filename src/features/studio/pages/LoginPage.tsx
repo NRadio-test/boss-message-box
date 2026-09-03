@@ -4,7 +4,7 @@ import { Navigate, useLocation, useNavigate } from "react-router-dom";
 import { Button } from "../../../components/Button";
 import { studioLoginSchema } from "../../../shared/studio-contracts";
 import { StudioApiError } from "../api";
-import { useStudioSession } from "../session";
+import { useStudioSession } from "../use-studio-session";
 
 interface LoginLocationState {
   from?: string;

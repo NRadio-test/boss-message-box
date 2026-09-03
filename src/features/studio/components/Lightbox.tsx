@@ -21,8 +21,6 @@ export function Lightbox({ images, initialIndex, onClose }: LightboxProps) {
   const [index, setIndex] = useState(initialIndex);
   const current = images[index];
 
-  useEffect(() => setIndex(initialIndex), [initialIndex]);
-
   useEffect(() => {
     const dialog = ref.current;
     if (!dialog || dialog.open) return;

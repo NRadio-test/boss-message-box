@@ -21,7 +21,12 @@ try {
     const failures = [];
     page.on("pageerror", (error) => failures.push(`pageerror: ${error.message}`));
     page.on("console", (message) => {
-      if (message.type() === "error" && !message.text().includes("challenges.cloudflare.com")) {
+      const expectedStudioSessionMiss = message.text().includes("401 (Unauthorized)");
+      if (
+        message.type() === "error" &&
+        !message.text().includes("challenges.cloudflare.com") &&
+        !expectedStudioSessionMiss
+      ) {
         failures.push(`console: ${message.text()}`);
       }
     });
@@ -62,6 +67,66 @@ try {
       failures.push(`history overflow ${historyDimensions.page}px > ${historyDimensions.viewport}px`);
     }
     await page.screenshot({ path: `/private/tmp/boss-message-box-history-${viewport.name}.png`, fullPage: true });
+
+    await page.goto("http://127.0.0.1:5173/studio", { waitUntil: "networkidle" });
+    await page.getByRole("heading", { name: "登录 Studio" }).waitFor();
+    await page.getByLabel("账号").fill("zd");
+    await page.getByLabel("密码").fill("admin");
+    await page.getByRole("button", { name: "登录" }).click();
+    await page.getByRole("heading", { name: "未回复留言" }).waitFor();
+    await page.locator(".studio-feedback-card, .studio-empty").first().waitFor();
+    const studioDimensions = await page.evaluate(() => ({
+      viewport: document.documentElement.clientWidth,
+      page: document.documentElement.scrollWidth,
+    }));
+    if (studioDimensions.page > studioDimensions.viewport) {
+      failures.push(`studio overflow ${studioDimensions.page}px > ${studioDimensions.viewport}px`);
+    }
+    if (await page.getByRole("link", { name: "提交留言" }).count()) {
+      failures.push("public navigation leaked into Studio");
+    }
+    await page.screenshot({ path: `/private/tmp/boss-message-box-studio-${viewport.name}.png`, fullPage: true });
+
+    if (viewport.name === "desktop" && await page.locator(".studio-feedback-card-main").count()) {
+      await page.locator(".studio-feedback-card-main").first().click();
+      await page.getByRole("heading", { name: "已发布硬件" }).waitFor();
+      const detailOverflow = await page.evaluate(() => document.documentElement.scrollWidth > document.documentElement.clientWidth);
+      if (detailOverflow) failures.push("studio detail has horizontal overflow");
+      await page.screenshot({ path: "/private/tmp/boss-message-box-studio-detail-desktop.png", fullPage: true });
+      await page.locator(".studio-back-button").click();
+      await page.getByRole("heading", { name: "未回复留言" }).waitFor();
+      await page.locator(".studio-live-toggle:visible").click();
+      await page.getByRole("button", { name: "退出直播模式" }).waitFor();
+      if (await page.locator(".studio-search:visible").count()) failures.push("Studio search remains visible in live mode");
+      if (await page.getByText("双击显示完整号码").count()) failures.push("phone reveal remains visible in live mode");
+      await page.screenshot({ path: "/private/tmp/boss-message-box-studio-live-desktop.png", fullPage: true });
+      await page.getByRole("button", { name: "退出直播模式" }).click();
+      await page.locator('.studio-shell[data-mode="normal"]').waitFor();
+      await page.getByRole("heading", { name: "未回复留言" }).waitFor();
+    }
+
+    if (viewport.width < 1024) {
+      await page.locator(".studio-mobile-menu summary").click();
+      await page.locator(".studio-mobile-menu[open] .studio-logout-row").click();
+    } else {
+      const desktopLogout = page.locator('.studio-sidebar .studio-icon-button[aria-label="退出登录"]');
+      if (!(await desktopLogout.isVisible())) {
+        const shellState = await page.evaluate(() => ({
+          width: window.innerWidth,
+          mode: document.querySelector(".studio-shell")?.getAttribute("data-mode"),
+          sidebarDisplay: getComputedStyle(document.querySelector(".studio-sidebar")).display,
+          href: location.href,
+        }));
+        failures.push(`desktop logout is hidden: ${JSON.stringify(shellState)}`);
+      } else {
+        await desktopLogout.click();
+      }
+    }
+    if (!failures.some((failure) => failure.startsWith("desktop logout is hidden"))) {
+      const logoutDialog = page.getByRole("dialog");
+      await logoutDialog.getByRole("heading", { name: "确定退出登录吗？" }).waitFor();
+      await logoutDialog.locator("button.button--quiet", { hasText: "取消" }).click();
+    }
     results.push({ viewport, failures });
     await context.close();
   }

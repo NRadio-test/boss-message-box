@@ -40,10 +40,11 @@ export function FeedbackDetailPage() {
   const location = useLocation();
   const navigate = useNavigate();
   const returnContext = (location.state as DetailLocationState | null)?.returnContext ?? null;
-  const [item, setItem] = useState<StudioFeedbackDetail | null>(null);
+  const [loaded, setLoaded] = useState<{ feedbackId: string; item: StudioFeedbackDetail } | null>(null);
+  const item = loaded?.feedbackId === feedbackId ? loaded.item : null;
   const [error, setError] = useState<string | null>(null);
   const [reload, setReload] = useState(0);
-  const [fullPhone, setFullPhone] = useState<string | null>(null);
+  const [revealedPhone, setRevealedPhone] = useState<{ userId: string; phone: string } | null>(null);
   const [revealing, setRevealing] = useState(false);
   const [replyType, setReplyType] = useState<StudioReplyType | null>(null);
   const [replyContent, setReplyContent] = useState("");
@@ -55,17 +56,16 @@ export function FeedbackDetailPage() {
 
   useEffect(() => {
     const controller = new AbortController();
-    setError(null);
-    setItem(null);
     getStudioFeedback(feedbackId, controller.signal)
-      .then((value) => setItem(value.item))
+      .then((value) => {
+        setLoaded({ feedbackId, item: value.item });
+        setError(null);
+      })
       .catch((reason) => {
         if (!controller.signal.aborted) setError(reason instanceof Error ? reason.message : "留言详情加载失败");
       });
     return () => controller.abort();
   }, [feedbackId, reload]);
-
-  useEffect(() => setFullPhone(null), [feedbackId, liveMode]);
 
   const images = useMemo<LightboxImage[]>(
     () => item?.images.map((image, index) => ({
@@ -90,11 +90,12 @@ export function FeedbackDetailPage() {
   };
 
   const revealPhone = async () => {
+    const fullPhone = !liveMode && revealedPhone && revealedPhone.userId === item?.userId ? revealedPhone.phone : null;
     if (!item || liveMode || revealing || fullPhone) return;
     setRevealing(true);
     setReplyError(null);
     try {
-      setFullPhone((await revealStudioPhone(item.userId)).phone);
+      setRevealedPhone({ userId: item.userId, phone: (await revealStudioPhone(item.userId)).phone });
     } catch (reason) {
       setReplyError(reason instanceof Error ? reason.message : "手机号暂时无法显示");
     } finally {
@@ -137,13 +138,16 @@ export function FeedbackDetailPage() {
         replyContent.trim(),
         liveMode ? undefined : replyType ?? undefined,
       );
-      setItem((current) => current ? {
-        ...current,
-        replies: [...current.replies, value.reply],
-        status: value.status,
-        isTodo: value.isTodo,
-        replyCount: value.replyCount,
-        latestReplyAdmin: value.latestReplyAdmin,
+      setLoaded((current) => current?.feedbackId === feedbackId ? {
+        feedbackId,
+        item: {
+          ...current.item,
+          replies: [...current.item.replies, value.reply],
+          status: value.status,
+          isTodo: value.isTodo,
+          replyCount: value.replyCount,
+          latestReplyAdmin: value.latestReplyAdmin,
+        },
       } : current);
       setReplyContent("");
       setReplyType(null);
@@ -161,11 +165,12 @@ export function FeedbackDetailPage() {
     else setConfirmOpen(true);
   };
 
-  if (error) return <div className="studio-page"><StudioError message={error} onRetry={() => setReload((value) => value + 1)} /></div>;
+  if (error) return <div className="studio-page"><StudioError message={error} onRetry={() => { setError(null); setLoaded(null); setReload((value) => value + 1); }} /></div>;
   if (!item) return <StudioLoading label="正在加载留言详情" />;
 
   const topic = item.topic === "other" ? item.customTopic : TOPIC_LABELS[item.topic];
   const replies = [...item.replies].sort((left, right) => left.createdAt - right.createdAt);
+  const fullPhone = !liveMode && revealedPhone && revealedPhone.userId === item.userId ? revealedPhone.phone : null;
   const currentDetailUrl = `${location.pathname}${location.search}`;
 
   return (
@@ -181,7 +186,6 @@ export function FeedbackDetailPage() {
       <article className="studio-feedback-detail">
         <div className="studio-detail-identity">
           <div><span>抖音昵称</span><Link to={`/studio/user/${encodeURIComponent(item.userId)}${liveMode ? "?mode=live" : ""}`} state={{ backTo: currentDetailUrl, detailState: location.state }}><UserCircle aria-hidden="true" />{item.nickname}</Link></div>
-          <div><span>提交时间</span><strong><Clock aria-hidden="true" />{formatDate(item.createdAt)}</strong></div>
         </div>
         <div className="studio-detail-section">
           <span>主题</span>
@@ -190,6 +194,10 @@ export function FeedbackDetailPage() {
         <div className="studio-detail-section">
           <span>留言正文</span>
           <p className="studio-detail-content">{item.content}</p>
+        </div>
+        <div className="studio-detail-section studio-submitted-time">
+          <span>提交时间</span>
+          <strong><Clock aria-hidden="true" />{formatDate(item.createdAt)}</strong>
         </div>
 
         {images.length > 0 && (

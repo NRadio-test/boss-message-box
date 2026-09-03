@@ -1,7 +1,6 @@
 import {
   Broadcast,
   CaretDown,
-  ChatCircleText,
   CheckCircle,
   ListChecks,
   MagnifyingGlass,
@@ -12,8 +11,9 @@ import {
 import { useEffect, useRef, useState, type FormEvent, type ReactNode } from "react";
 import { NavLink, Outlet, useLocation, useNavigate, useSearchParams } from "react-router-dom";
 import { Button } from "../../../components/Button";
-import { clearLiveReturn, loadLiveReturn, saveLiveReturn } from "../navigation-context";
-import { useStudioSession } from "../session";
+import { captureReturnContext, clearLiveReturn, loadLiveReturn, saveLiveReturn } from "../navigation-context";
+import { useStudioSession } from "../use-studio-session";
+import { StudioLoading } from "./AsyncState";
 import { ConfirmDialog } from "./ConfirmDialog";
 
 export interface StudioOutletContext {
@@ -48,10 +48,17 @@ function StudioNavigation({ afterNavigate }: { afterNavigate?: () => void }) {
   );
 }
 
+function withoutLiveMode(url: string): string {
+  const parsed = new URL(url, window.location.origin);
+  parsed.searchParams.delete("mode");
+  return `${parsed.pathname}${parsed.search}${parsed.hash}`;
+}
+
 export function StudioShell() {
   const { admin, mode, logout, setMode } = useStudioSession();
   const navigate = useNavigate();
   const location = useLocation();
+  const locationState = location.state;
   const [searchParams, setSearchParams] = useSearchParams();
   const [search, setSearch] = useState("");
   const [logoutOpen, setLogoutOpen] = useState(false);
@@ -62,23 +69,46 @@ export function StudioShell() {
   const modeActionRef = useRef(false);
   const liveRequested = searchParams.get("mode") === "live";
   const liveMode = liveRequested || mode === "live";
+  const liveModeReady = !liveRequested || mode === "live";
 
   useEffect(() => {
     if (modeActionRef.current) return;
     if (mode === "normal" && liveRequested) {
-      setModeBusy(true);
-      void setMode("live")
-        .catch((error) => setModeError(error instanceof Error ? error.message : "无法进入直播模式"))
-        .finally(() => setModeBusy(false));
+      const synchronizeLiveMode = async () => {
+        setModeBusy(true);
+        try {
+          await setMode("live");
+        } catch (error) {
+          setModeError(error instanceof Error ? error.message : "无法进入直播模式");
+        } finally {
+          setModeBusy(false);
+        }
+      };
+      void synchronizeLiveMode();
     } else if (mode === "live" && !liveRequested) {
       const next = new URLSearchParams(searchParams);
       next.set("mode", "live");
-      setSearchParams(next, { replace: true });
+      setSearchParams(next, { replace: true, state: locationState });
     }
-  }, [liveRequested, mode, searchParams, setMode, setSearchParams]);
+  }, [liveRequested, locationState, mode, searchParams, setMode, setSearchParams]);
 
   const enterLiveMode = async () => {
-    saveLiveReturn({ url: `${location.pathname}${location.search}` });
+    const cards = Array.from(document.querySelectorAll<HTMLElement>("[data-feedback-id]"));
+    const anchor = cards
+      .map((element) => ({ element, distance: Math.abs(element.getBoundingClientRect().top) }))
+      .sort((left, right) => left.distance - right.distance)[0]?.element;
+    const anchorId = anchor?.dataset.feedbackId;
+    const searchState = locationState as { query?: string; searchRestore?: { query: string; page: number } } | null;
+    const searchContext = searchState?.searchRestore ?? (searchState?.query ? { query: searchState.query, page: 1 } : undefined);
+    const returnContext = anchor && anchorId
+        ? captureReturnContext(
+            `${location.pathname}${location.search}`,
+            anchorId,
+            cards.map((element) => element.dataset.feedbackId).filter(Boolean) as string[],
+            anchor,
+          )
+        : { url: `${location.pathname}${location.search}` };
+    saveLiveReturn({ ...returnContext, ...(searchContext ? { search: searchContext } : {}) });
     setModeBusy(true);
     setModeError(null);
     modeActionRef.current = true;
@@ -86,7 +116,7 @@ export function StudioShell() {
       await setMode("live");
       const next = new URLSearchParams(searchParams);
       next.set("mode", "live");
-      setSearchParams(next);
+      setSearchParams(next, { state: locationState });
     } catch (error) {
       setModeError(error instanceof Error ? error.message : "无法进入直播模式");
     } finally {
@@ -99,12 +129,16 @@ export function StudioShell() {
     setModeBusy(true);
     setModeError(null);
     modeActionRef.current = true;
-    const destination = loadLiveReturn()?.url ?? "/studio/unreplied";
+    const returnContext = loadLiveReturn();
+    const destination = withoutLiveMode(returnContext?.url ?? "/studio/unreplied");
     try {
       if (document.fullscreenElement) await document.exitFullscreen().catch(() => undefined);
+      navigate(destination, {
+        replace: true,
+        state: { restoreContext: returnContext, searchRestore: returnContext?.search },
+      });
       await setMode("normal");
       clearLiveReturn();
-      navigate(destination, { replace: true });
     } catch (error) {
       setModeError(error instanceof Error ? error.message : "无法退出直播模式");
     } finally {
@@ -202,7 +236,11 @@ export function StudioShell() {
         {modeBusy && <div className="studio-mode-note" aria-live="polite">正在切换展示模式…</div>}
         {modeError && <div className="studio-mode-error" role="alert"><span>{modeError}</span><button type="button" aria-label="关闭提示" onClick={() => setModeError(null)}><X aria-hidden="true" /></button></div>}
         <main id="main-content" tabIndex={-1}>
-          <Outlet context={{ liveMode } satisfies StudioOutletContext} />
+          {!liveModeReady || modeBusy ? (
+            <StudioLoading label="正在切换展示模式" />
+          ) : (
+            <Outlet context={{ liveMode } satisfies StudioOutletContext} />
+          )}
         </main>
       </div>
 

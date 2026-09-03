@@ -208,4 +208,46 @@ describe("D1 Studio repository", () => {
         .first<{ is_todo: number }>())?.is_todo,
     ).toBe(0);
   });
+
+  it("keeps 30-item pages stable and supports the three search forms", async () => {
+    for (let index = 0; index < 31; index += 1) {
+      await seedFeedback({
+        id: `${index.toString(16).padStart(8, "0")}-feedback`,
+        createdAt: 10_000 + index,
+      });
+    }
+    const repository = new D1StudioRepository(env.BOSS_MESSAGE_DB);
+    const firstPage = await repository.listFeedbacks({ view: "unreplied", page: 1, snapshot: null });
+    expect(firstPage.items).toHaveLength(30);
+    expect(firstPage.items[0]?.id).toBe("0000001e-feedback");
+    expect(firstPage.pagination).toMatchObject({ pageSize: 30, total: 31, totalPages: 2 });
+
+    await seedFeedback({ id: "ffffffff-feedback", createdAt: 20_000 });
+    const secondPage = await repository.listFeedbacks({
+      view: "unreplied",
+      page: 2,
+      snapshot: firstPage.snapshot,
+    });
+    expect(secondPage.items.map((item) => item.id)).toEqual(["00000000-feedback"]);
+    expect(await repository.countNewFeedback(firstPage.snapshot!)).toBe(1);
+
+    expect((await repository.searchFeedbacks({
+      queryType: "phone",
+      queryValue: "studio-phone-hash",
+      page: 1,
+      snapshot: null,
+    })).pagination.total).toBe(32);
+    expect((await repository.searchFeedbacks({
+      queryType: "feedback_number",
+      queryValue: "0000001E",
+      page: 1,
+      snapshot: null,
+    })).items.map((item) => item.id)).toEqual(["0000001e-feedback"]);
+    expect((await repository.searchFeedbacks({
+      queryType: "nickname",
+      queryValue: "测试昵称",
+      page: 1,
+      snapshot: null,
+    })).pagination.total).toBe(32);
+  });
 });

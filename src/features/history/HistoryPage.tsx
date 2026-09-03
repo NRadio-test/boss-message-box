@@ -112,10 +112,17 @@ export function HistoryPage() {
                 <h3>{item.topic === "other" ? item.customTopic : TOPIC_LABELS[item.topic]}</h3>
                 <p className="message-content">{item.content}</p>
                 {item.imageCount > 0 && <div className="image-count"><ImageSquare aria-hidden="true" /> 已提交 {item.imageCount} 张图片</div>}
-                {item.status === "replied" && item.replyContent && (
-                  <div className="reply-block">
-                    <div><ChatCircleText aria-hidden="true" weight="fill" /> 回复</div>
-                    <p>{item.replyContent}</p>
+                {item.status === "replied" && item.replies.length > 0 && (
+                  <div className="reply-list" aria-label="官方回复">
+                    {item.replies.map((reply) => (
+                      <div className="reply-block" key={reply.id}>
+                        <div>
+                          <span><ChatCircleText aria-hidden="true" weight="fill" /> 官方回复</span>
+                          <span>{reply.replyType === "live" ? "直播回复" : "留言回复"} · {formatDate(reply.createdAt)}</span>
+                        </div>
+                        <p>{reply.content}</p>
+                      </div>
+                    ))}
                   </div>
                 )}
               </li>
