@@ -57,7 +57,7 @@ export function LoginPage() {
       <section className="studio-login-panel" aria-labelledby="studio-login-title">
         <div className="studio-login-brand">
           <span className="brand-signal" aria-hidden="true"><i /><i /><i /></span>
-          <span>老板留言箱</span>
+          <span>张导请回答</span>
         </div>
         <span className="studio-kicker">内部工作台</span>
         <h1 id="studio-login-title">登录 Studio</h1>

@@ -22,9 +22,9 @@ export interface StudioOutletContext {
 
 function StudioBrand() {
   return (
-    <div className="studio-brand" aria-label="老板留言箱 Studio">
+    <div className="studio-brand" aria-label="张导请回答 Studio">
       <span className="brand-signal" aria-hidden="true"><i /><i /><i /></span>
-      <span><strong>老板留言箱</strong><small>Studio</small></span>
+      <span><strong>张导请回答</strong><small>Studio</small></span>
     </div>
   );
 }

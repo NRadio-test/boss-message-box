@@ -441,10 +441,7 @@ export function FeedbackForm({ config }: { config: PublicConfig }) {
 
         <FormField index="05" label="手机号" htmlFor="phone" required error={errors.phone}>
           <div className="phone-input">
-            <span className="phone-prefix" aria-hidden="true">
-              <span>中国大陆</span>
-              <span>+86</span>
-            </span>
+            <span className="phone-prefix" aria-hidden="true">+86</span>
             <input
               id="phone"
               required
@@ -453,7 +450,6 @@ export function FeedbackForm({ config }: { config: PublicConfig }) {
               autoComplete="tel-national"
               value={draft.phone}
               maxLength={13}
-              placeholder="11 位手机号码"
               onChange={(event) => update("phone", event.target.value.replace(/[^\d\s-]/g, ""))}
               aria-invalid={Boolean(errors.phone)}
               aria-describedby={errors.phone ? "phone-error" : undefined}

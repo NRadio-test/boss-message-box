@@ -6,9 +6,9 @@ export function AppShell({ children }: { children: ReactNode }) {
   return (
     <div className="app-shell">
       <header className="site-header">
-        <NavLink to="/" className="brand" aria-label="老板留言箱首页">
+        <NavLink to="/" className="brand" aria-label="张导请回答首页">
           <span className="brand-signal" aria-hidden="true"><i /><i /><i /></span>
-          <span>老板留言箱</span>
+          <span>张导请回答</span>
         </NavLink>
         <nav className="primary-nav" aria-label="主要导航">
           <NavLink to="/" end>
