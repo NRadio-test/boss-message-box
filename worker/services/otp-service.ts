@@ -52,17 +52,32 @@ export class OtpService {
     remoteIp: string | null;
     now: number;
   }): Promise<OtpRequestSuccess> {
+    console.log("OTP_STAGE", "start");
+
     const human = await this.dependencies.turnstile.verify({
       token: input.turnstileToken,
       remoteIp: input.remoteIp,
       expectedAction: "request_otp",
     });
-    if (!human) throw new PublicError(400, "TURNSTILE_FAILED", "人机验证未通过，请重试");
+
+    console.log("OTP_STAGE", "turnstile_done", { human });
+
+    if (!human) {
+      throw new PublicError(400, "TURNSTILE_FAILED", "人机验证未通过，请重试");
+    }
 
     const phoneHash = await this.dependencies.phoneCrypto.hash(input.phone);
+    console.log("OTP_STAGE", "phone_hash_ok");
+
     const existingUser = await this.dependencies.users.findByPhoneHash(phoneHash);
+    console.log("OTP_STAGE", "user_lookup_ok");
+
     if (existingUser && existingUser.nickname !== input.nickname) {
-      throw new PublicError(409, "NICKNAME_MISMATCH", "此手机号已绑定其他抖音昵称，请检查后重试");
+      throw new PublicError(
+        409,
+        "NICKNAME_MISMATCH",
+        "此手机号已绑定其他抖音昵称，请检查后重试",
+      );
     }
 
     const [phoneLimit, ipLimit] = await Promise.all([
@@ -81,12 +96,25 @@ export class OtpService {
         now: input.now,
       }),
     ]);
+
+    console.log("OTP_STAGE", "rate_limit_ok");
+
     if (!phoneLimit.allowed || !ipLimit.allowed) {
-      const retryAfterSeconds = Math.max(phoneLimit.retryAfterSeconds, ipLimit.retryAfterSeconds);
-      throw new PublicError(429, "RATE_LIMITED", "验证码请求较频繁，请稍后再试", { retryAfterSeconds });
+      const retryAfterSeconds = Math.max(
+        phoneLimit.retryAfterSeconds,
+        ipLimit.retryAfterSeconds,
+      );
+
+      throw new PublicError(
+        429,
+        "RATE_LIMITED",
+        "验证码请求较频繁，请稍后再试",
+        { retryAfterSeconds },
+      );
     }
 
     const leaseToken = crypto.randomUUID();
+
     const reservation = await this.dependencies.otp.reserveSend({
       phoneHash,
       leaseToken,
@@ -94,6 +122,9 @@ export class OtpService {
       leaseSeconds: OTP_LEASE_SECONDS,
       cooldownSeconds: OTP_COOLDOWN_SECONDS,
     });
+
+    console.log("OTP_STAGE", "reservation_ok");
+
     if (!reservation.reserved) {
       throw new PublicError(
         429,
@@ -105,11 +136,28 @@ export class OtpService {
 
     const challengeId = crypto.randomUUID();
     const nonce = crypto.randomUUID();
-    const code = this.dependencies.fixedDevelopmentCode ?? randomSixDigitCode();
-    const codeMac = await this.codeMac.sign(`${challengeId}:${phoneHash}:${nonce}:${code}`);
+    const code =
+      this.dependencies.fixedDevelopmentCode ?? randomSixDigitCode();
+
+    const codeMac = await this.codeMac.sign(
+      `${challengeId}:${phoneHash}:${nonce}:${code}`,
+    );
+
+    console.log("OTP_STAGE", "otp_hmac_ok");
+
     try {
-      await this.dependencies.sms.sendOtp({ phone: input.phone, code, expiresInMinutes: 5 });
+      console.log("OTP_STAGE", "sms_start");
+
+      await this.dependencies.sms.sendOtp({
+        phone: input.phone,
+        code,
+        expiresInMinutes: 5,
+      });
+
+      console.log("OTP_STAGE", "sms_ok");
+
       const sentAt = Date.now();
+
       await this.dependencies.otp.commitSent({
         challengeId,
         phoneHash,
@@ -119,6 +167,9 @@ export class OtpService {
         now: sentAt,
         expiresAt: sentAt + OTP_VALIDITY_SECONDS * 1000,
       });
+
+      console.log("OTP_STAGE", "commit_sent_ok");
+
       return {
         ok: true,
         challengeId,
@@ -132,12 +183,20 @@ export class OtpService {
       // timeout or broken response is an unknown outcome, so the lease stays
       // in place for the full 120-second cooldown to prevent duplicate sends.
       if (error instanceof SmsProviderRejectedError) {
-        await this.dependencies.otp.releaseReservation(phoneHash, leaseToken, Date.now()).catch(() => undefined);
+        await this.dependencies.otp
+          .releaseReservation(phoneHash, leaseToken, Date.now())
+          .catch(() => undefined);
       }
+
       console.error("OTP send failed", {
         kind: error instanceof Error ? error.name : "UnknownError",
       });
-      throw new PublicError(503, "SMS_UNAVAILABLE", "验证码暂时无法发送，请稍后重试");
+
+      throw new PublicError(
+        503,
+        "SMS_UNAVAILABLE",
+        "验证码暂时无法发送，请稍后重试",
+      );
     }
   }
 
@@ -147,26 +206,59 @@ export class OtpService {
     code: string;
     now: number;
   }): Promise<void> {
-    const challenge = await this.dependencies.otp.findChallenge(input.challengeId, input.phoneHash);
+    const challenge = await this.dependencies.otp.findChallenge(
+      input.challengeId,
+      input.phoneHash,
+    );
+
     if (!challenge || challenge.consumedAt || challenge.invalidatedAt) {
-      throw new PublicError(400, "OTP_INVALID", "验证码无效，请重新获取");
+      throw new PublicError(
+        400,
+        "OTP_INVALID",
+        "验证码无效，请重新获取",
+      );
     }
+
     if (challenge.expiresAt < input.now) {
-      throw new PublicError(400, "OTP_EXPIRED", "验证码已过期，请重新获取");
+      throw new PublicError(
+        400,
+        "OTP_EXPIRED",
+        "验证码已过期，请重新获取",
+      );
     }
+
     if (challenge.attemptCount >= OTP_MAX_ATTEMPTS) {
-      throw new PublicError(429, "OTP_ATTEMPTS_EXCEEDED", "尝试次数过多，请重新获取验证码");
+      throw new PublicError(
+        429,
+        "OTP_ATTEMPTS_EXCEEDED",
+        "尝试次数过多，请重新获取验证码",
+      );
     }
+
     const valid = await this.codeMac.verify(
       `${challenge.id}:${challenge.phoneHash}:${challenge.nonce}:${input.code}`,
       challenge.codeMac,
     );
+
     if (!valid) {
-      const attempts = await this.dependencies.otp.recordFailedAttempt(challenge.id, input.now);
+      const attempts = await this.dependencies.otp.recordFailedAttempt(
+        challenge.id,
+        input.now,
+      );
+
       if (attempts >= OTP_MAX_ATTEMPTS) {
-        throw new PublicError(429, "OTP_ATTEMPTS_EXCEEDED", "尝试次数过多，请重新获取验证码");
+        throw new PublicError(
+          429,
+          "OTP_ATTEMPTS_EXCEEDED",
+          "尝试次数过多，请重新获取验证码",
+        );
       }
-      throw new PublicError(400, "OTP_INVALID", "验证码不正确，请检查后重试");
+
+      throw new PublicError(
+        400,
+        "OTP_INVALID",
+        "验证码不正确，请检查后重试",
+      );
     }
   }
 }
