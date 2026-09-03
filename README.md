@@ -12,7 +12,7 @@
 - 文本和确认项保存到 `localStorage`，图片草稿保存到 IndexedDB；只有服务端确认提交成功才会清空。
 - D1 写入使用原子批处理。R2 与 D1 的跨服务失败由持久化清理队列补偿，每 15 分钟先确认对象未被留言引用，再安全删除。
 
-核心业务依赖端口定义在 `worker/core/ports.ts`。D1、R2、Cloudflare Images、Turnstile 与阿里云短信只是当前适配器，未来替换数据库、对象存储或短信商时不需要重写表单和业务规则。
+核心业务依赖端口定义在 `worker/core/ports.ts`。D1、R2、Cloudflare Images、Turnstile 与阿里云号码认证服务 PNVS 只是当前适配器，未来替换数据库、对象存储或短信商时不需要重写表单和业务规则。
 
 ## 本地运行
 
@@ -38,7 +38,7 @@ pnpm db:migrate:local
 pnpm dev
 ```
 
-开发环境使用 Cloudflare 官方 Turnstile 测试密钥和固定验证码 `123456`。`mock` 短信在 `production` 环境会被代码直接拒绝。
+开发环境使用 Cloudflare 官方 Turnstile 测试密钥和固定验证码 `123456`。这个固定值只有 `APP_ENV=development` 时才会注入；即使生产环境误配了 `DEV_OTP_CODE`，代码也会忽略它，且 `mock` Provider 在 `production` 会被直接拒绝。
 
 完整验证命令是：
 
@@ -75,7 +75,7 @@ pnpm run db:migrate:remote
 创建 Turnstile widget，把站点密钥写到 `wrangler.jsonc` 的 `TURNSTILE_SITE_KEY`。在 Turnstile 的 Hostname Management 中加入正式自定义域名；如果也准备直接使用稳定的 `*.workers.dev` 地址，再把它一并加入。将完全相同的 hostname 列表按逗号分隔写入 `TURNSTILE_EXPECTED_HOSTNAMES`，不带协议、端口和路径。非生产版本的临时预览域名默认不加入白名单，这样它们不会误写正式留言数据。同步确认：
 
 - `APP_ENV=production`
-- `SMS_PROVIDER=alibaba`
+- `SMS_PROVIDER=alibaba_pnvs`
 - `PRIVACY_POLICY_VERSION` 与正式隐私政策的版本/生效日期一致
 - `LIVESTREAM_POLICY_VERSION` 与正式直播展示说明一致
 
@@ -92,12 +92,16 @@ Turnstile secret 不要写进 Git，它属于下一步的运行时 Secret。
 - `RATE_LIMIT_HMAC_KEY`
 - `ALIBABA_ACCESS_KEY_ID`
 - `ALIBABA_ACCESS_KEY_SECRET`
-- `ALIBABA_SMS_SIGN_NAME`
-- `ALIBABA_SMS_TEMPLATE_CODE`
+- `ALIBABA_PNVS_SIGN_NAME`
+- `ALIBABA_PNVS_TEMPLATE_CODE`
 
 前五个安全密钥都应分别使用 `openssl rand -base64 32` 生成，不能复用。请离线备份 `PHONE_HASH_KEY` 与 `PHONE_ENCRYPTION_KEY`：前者决定历史记录能否继续按手机号命中，后者决定手机号能否解密，不能像普通会话密钥那样随意替换。
 
-阿里云短信模板参数名必须是 `code`，有效期提示“5 分钟”应直接写在已审核模板文案中。建议给 AccessKey 只授予发送短信所需的最小权限。
+后四项用于阿里云号码认证服务 PNVS 的短信认证，不是普通短信服务 SMS：AccessKey 可以沿用同一套通用凭据名，但签名与模板必须从号码认证控制台的“短信认证参数配置”中取得。当前 PNVS 不支持普通 SMS 的自定义签名/模板，建议使用系统赠送签名，并与系统赠送模板配套；两套产品的模板资源和套餐也不互通。
+
+生产发送流程保持为：Worker 每次用 Web Crypto 安全随机生成新的 6 位数字 → 以现有 `OTP_HMAC_KEY` 做 HMAC 并保存在 D1 状态中 → 将这个具体数字放入 `SendSmsVerifyCode.TemplateParam` 的 `code` 字段 → PNVS 只负责发送 → 用户回填后仍由本 Worker 和 D1 校验。实现不会传入 `##code##`，不会传 `CodeType`，也不会调用 `CheckSmsVerifyCode`。PNVS 请求同时固定 `CountryCode=86`、`CodeLength=6`、`ValidTime=300`、`Interval=120`、`ReturnVerifyCode=false` 和 `AutoRetry=0`；模板须包含 `${code}` 与 `${min}` 两个变量，`min` 会传入 `5`。按照该 Operation 的官方 SDK metadata，这些业务参数全部位于 URL query，POST 请求体为空；ACS3 签名也使用排序编码后的 query 和空请求体 SHA-256。
+
+建议为 RAM 用户配置只允许 `dypns:SendSmsVerifyCode` 的最小权限。上线前还要在号码认证服务中开通短信认证、确认账户余额或购买 PNVS 短信认证套餐，并用控制台显示的签名名称和模板 Code 填入上述两个 Secret。
 
 ### 4. 连接 GitHub，让 Cloudflare 自动部署
 
@@ -119,7 +123,7 @@ Turnstile secret 不要写进 Git，它属于下一步的运行时 Secret。
 
 ### 5. 上线前必须完成的人工检查
 
-- 用真实阿里云签名和模板发送一次验证码，确认模板参数、签名、频控和账单告警。
+- 用号码认证服务 PNVS 的真实赠送签名和配套模板发送一次验证码，确认收到的数字正是 Worker 本次生成的 OTP，并检查模板参数、120 秒频控、PNVS 套餐余额和账单告警。
 - 在真实 iPhone/Android、微信/抖音内置浏览器，以及移动/联通/电信网络各测试一次：打开、Turnstile、收码、提交、刷新后冷却、历史查询和三张大图。
 - 确认 R2 的 Public Development URL 显示为未允许，并从公网直接请求随机对象 key 应失败。
 - 在 Cloudflare Observability 中确认错误日志只有 request ID、错误码和供应商 request ID，没有手机号、验证码、留言正文或图片 URL。

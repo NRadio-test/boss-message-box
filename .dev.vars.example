@@ -17,3 +17,12 @@ PHONE_HASH_KEY=AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=
 PHONE_ENCRYPTION_KEY=ERERERERERERERERERERERERERERERERERERERERERE=
 OTP_HMAC_KEY=IiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiI=
 RATE_LIMIT_HMAC_KEY=MzMzMzMzMzMzMzMzMzMzMzMzMzMzMzMzMzMzMzMzMzM=
+
+# Optional local PNVS integration test. Keep SMS_PROVIDER=mock for normal
+# development; if testing PNVS locally, use non-production credentials and
+# replace every placeholder below. Never commit real values.
+# SMS_PROVIDER=alibaba_pnvs
+# ALIBABA_ACCESS_KEY_ID=replace-with-non-production-access-key-id
+# ALIBABA_ACCESS_KEY_SECRET=replace-with-non-production-access-key-secret
+# ALIBABA_PNVS_SIGN_NAME=replace-with-pnvs-gift-sign-name
+# ALIBABA_PNVS_TEMPLATE_CODE=replace-with-pnvs-gift-template-code

@@ -3,7 +3,7 @@ export interface Env {
   BOSS_MESSAGE_IMAGES: R2Bucket;
   IMAGES: ImagesBinding;
   APP_ENV: "development" | "production" | "test";
-  SMS_PROVIDER: "mock" | "alibaba";
+  SMS_PROVIDER: "mock" | "alibaba_pnvs";
   DEV_OTP_CODE?: string;
   TURNSTILE_SITE_KEY: string;
   TURNSTILE_SECRET_KEY: string;
@@ -16,6 +16,6 @@ export interface Env {
   RATE_LIMIT_HMAC_KEY: string;
   ALIBABA_ACCESS_KEY_ID?: string;
   ALIBABA_ACCESS_KEY_SECRET?: string;
-  ALIBABA_SMS_SIGN_NAME?: string;
-  ALIBABA_SMS_TEMPLATE_CODE?: string;
+  ALIBABA_PNVS_SIGN_NAME?: string;
+  ALIBABA_PNVS_TEMPLATE_CODE?: string;
 }

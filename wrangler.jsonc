@@ -30,7 +30,7 @@
   },
   "vars": {
     "APP_ENV": "production",
-    "SMS_PROVIDER": "alibaba",
+    "SMS_PROVIDER": "alibaba_pnvs",
     "TURNSTILE_SITE_KEY": "0x4AAAAAAEliU6CJbO1itIy3",
     "TURNSTILE_EXPECTED_HOSTNAMES": "message.fallaxaura.com",
     "PRIVACY_POLICY_VERSION": "2026-09-03",

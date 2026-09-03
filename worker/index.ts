@@ -17,7 +17,7 @@ import {
   D1UserRepository,
 } from "./infra/d1-repositories";
 import { R2ImageStorage } from "./infra/r2-image-storage";
-import { createSmsProvider } from "./providers/sms";
+import { createSmsProvider, resolveDevelopmentOtpCode } from "./providers/sms";
 import { CloudflareTurnstileVerifier } from "./providers/turnstile";
 import { WebCryptoPhoneService } from "./security/crypto";
 import { FeedbackService } from "./services/feedback-service";
@@ -61,7 +61,7 @@ function createServices(env: Env): { otp: OtpService; feedback: FeedbackService;
       env.APP_ENV !== "production",
     ),
     otpHmacKey: env.OTP_HMAC_KEY,
-    fixedDevelopmentCode: env.APP_ENV === "development" ? env.DEV_OTP_CODE : undefined,
+    fixedDevelopmentCode: resolveDevelopmentOtpCode(env),
   });
   return {
     otp,

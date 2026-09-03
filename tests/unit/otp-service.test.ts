@@ -63,6 +63,50 @@ describe("OTP send outcome handling", () => {
     await expect(service.request(request)).rejects.toMatchObject({ code: "SMS_UNAVAILABLE" });
     expect(releaseReservation).toHaveBeenCalledOnce();
   });
+
+  it("generates a fresh six-digit OTP for every production-style request", async () => {
+    const generated = [583_921, 104_637];
+    const getRandomValues = vi
+      .spyOn(globalThis.crypto, "getRandomValues")
+      .mockImplementation((array) => {
+        if (!(array instanceof Uint32Array)) throw new Error("Expected Uint32Array");
+        array[0] = generated.shift()!;
+        return array;
+      });
+    const sent: Array<{ phone: string; code: string; expiresInMinutes: number }> = [];
+    const repository = otpRepository(vi.fn());
+    const service = new OtpService({
+      users: { findByPhoneHash: vi.fn().mockResolvedValue(null) },
+      otp: repository,
+      rateLimits: {
+        consume: vi.fn().mockResolvedValue({ allowed: true, retryAfterSeconds: 0 }),
+        deleteExpired: vi.fn(),
+      },
+      phoneCrypto: {
+        hash: vi.fn().mockResolvedValue("phone-hash"),
+        encrypt: vi.fn(),
+        decrypt: vi.fn(),
+      },
+      sms: {
+        sendOtp: vi.fn(async (input) => {
+          sent.push(input);
+        }),
+      },
+      turnstile: { verify: vi.fn().mockResolvedValue(true) },
+      otpHmacKey: OTP_KEY,
+    });
+
+    await service.request(request);
+    await service.request({ ...request, now: request.now + 120_000 });
+
+    expect(sent).toEqual([
+      { phone: request.phone, code: "583921", expiresInMinutes: 5 },
+      { phone: request.phone, code: "104637", expiresInMinutes: 5 },
+    ]);
+    expect(sent.every(({ code }) => /^\d{6}$/u.test(code))).toBe(true);
+    expect(new Set(sent.map(({ code }) => code)).size).toBe(sent.length);
+    getRandomValues.mockRestore();
+  });
 });
 
 async function verificationSetup(input: {
