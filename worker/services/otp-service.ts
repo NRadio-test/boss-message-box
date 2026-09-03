@@ -52,25 +52,18 @@ export class OtpService {
     remoteIp: string | null;
     now: number;
   }): Promise<OtpRequestSuccess> {
-    console.log("OTP_STAGE", "start");
-
     const human = await this.dependencies.turnstile.verify({
       token: input.turnstileToken,
       remoteIp: input.remoteIp,
       expectedAction: "request_otp",
     });
 
-    console.log("OTP_STAGE", "turnstile_done", { human });
-
     if (!human) {
       throw new PublicError(400, "TURNSTILE_FAILED", "人机验证未通过，请重试");
     }
 
     const phoneHash = await this.dependencies.phoneCrypto.hash(input.phone);
-    console.log("OTP_STAGE", "phone_hash_ok");
-
     const existingUser = await this.dependencies.users.findByPhoneHash(phoneHash);
-    console.log("OTP_STAGE", "user_lookup_ok");
 
     if (existingUser && existingUser.nickname !== input.nickname) {
       throw new PublicError(
@@ -97,8 +90,6 @@ export class OtpService {
       }),
     ]);
 
-    console.log("OTP_STAGE", "rate_limit_ok");
-
     if (!phoneLimit.allowed || !ipLimit.allowed) {
       const retryAfterSeconds = Math.max(
         phoneLimit.retryAfterSeconds,
@@ -123,8 +114,6 @@ export class OtpService {
       cooldownSeconds: OTP_COOLDOWN_SECONDS,
     });
 
-    console.log("OTP_STAGE", "reservation_ok");
-
     if (!reservation.reserved) {
       throw new PublicError(
         429,
@@ -143,18 +132,12 @@ export class OtpService {
       `${challengeId}:${phoneHash}:${nonce}:${code}`,
     );
 
-    console.log("OTP_STAGE", "otp_hmac_ok");
-
     try {
-      console.log("OTP_STAGE", "sms_start");
-
       await this.dependencies.sms.sendOtp({
         phone: input.phone,
         code,
         expiresInMinutes: 5,
       });
-
-      console.log("OTP_STAGE", "sms_ok");
 
       const sentAt = Date.now();
 
@@ -167,8 +150,6 @@ export class OtpService {
         now: sentAt,
         expiresAt: sentAt + OTP_VALIDITY_SECONDS * 1000,
       });
-
-      console.log("OTP_STAGE", "commit_sent_ok");
 
       return {
         ok: true,
