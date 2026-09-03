@@ -1,0 +1,64 @@
+:root {
+  color-scheme: dark;
+
+  /* Night-navigation palette, authored in OKLCH. */
+  --color-bg: oklch(0.17 0.028 254);
+  --color-bg-deep: oklch(0.135 0.026 254);
+  --color-surface: oklch(0.215 0.034 253);
+  --color-surface-raised: oklch(0.285 0.048 248);
+  --color-surface-hover: oklch(0.33 0.052 246);
+  --color-text: oklch(0.977 0.008 245);
+  --color-text-secondary: oklch(0.82 0.027 247);
+  --color-text-muted: oklch(0.74 0.032 249);
+  --color-accent: oklch(0.84 0.13 218);
+  --color-accent-hover: oklch(0.88 0.115 216);
+  --color-accent-ink: oklch(0.16 0.025 246);
+  --color-border: oklch(0.56 0.055 237 / 0.34);
+  --color-border-strong: oklch(0.7 0.07 228 / 0.52);
+  --color-success: oklch(0.79 0.12 162);
+  --color-success-surface: oklch(0.28 0.055 162);
+  --color-warning: oklch(0.85 0.13 83);
+  --color-danger: oklch(0.78 0.13 28);
+  --color-danger-surface: oklch(0.28 0.07 28);
+  --color-neutral-status: oklch(0.68 0.025 248);
+  --color-backdrop: oklch(0.08 0.02 254 / 0.78);
+  --color-focus-ring: oklch(0.88 0.12 210 / 0.44);
+
+  --font-sans: "HarmonyOS Sans SC", "MiSans", "PingFang SC", "Noto Sans SC", "Microsoft YaHei", system-ui, sans-serif;
+  --font-mono: "SFMono-Regular", "Cascadia Code", "Roboto Mono", ui-monospace, monospace;
+
+  --type-display: clamp(2rem, 7vw, 3rem);
+  --type-h1: clamp(1.875rem, 6vw, 2.5rem);
+  --type-h2: clamp(1.5rem, 4vw, 2rem);
+  --type-h3: 1.125rem;
+  --type-body-lg: 1.0625rem;
+  --type-body: 1rem;
+  --type-body-sm: 0.9375rem;
+  --type-caption: 0.875rem;
+  --type-button: 1rem;
+
+  --space-1: 0.25rem;
+  --space-2: 0.5rem;
+  --space-3: 0.75rem;
+  --space-4: 1rem;
+  --space-5: 1.25rem;
+  --space-6: 1.5rem;
+  --space-8: 2rem;
+  --space-10: 2.5rem;
+  --space-12: 3rem;
+  --space-16: 4rem;
+
+  --radius-control: 0.75rem;
+  --radius-button: 0.875rem;
+  --radius-group: 1rem;
+  --radius-shell: 1.5rem;
+  --radius-pill: 999px;
+
+  --shadow-shell: 0 1.125rem 3.125rem oklch(0.08 0.03 254 / 0.34);
+  --shadow-dialog: 0 1.75rem 5rem oklch(0.06 0.025 254 / 0.55);
+  --shadow-button: 0 0.5rem 1.5rem oklch(0.55 0.14 218 / 0.2);
+
+  --motion-fast: 160ms;
+  --motion-standard: 220ms;
+  --ease-out: cubic-bezier(0.2, 0.7, 0.2, 1);
+}

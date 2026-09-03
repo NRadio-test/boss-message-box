@@ -1,0 +1,7 @@
+allowBuilds:
+  esbuild: true
+  workerd: true
+confirmModulesPurge: false
+onlyBuiltDependencies:
+  - esbuild
+  - workerd

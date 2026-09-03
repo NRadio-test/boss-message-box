@@ -1,0 +1,46 @@
+{
+  "$schema": "./node_modules/wrangler/config-schema.json",
+  "name": "boss-message-box",
+  "main": "./worker/index.ts",
+  "compatibility_date": "2026-08-28",
+  "compatibility_flags": ["nodejs_compat"],
+  "assets": {
+    "not_found_handling": "single-page-application",
+    "run_worker_first": ["/api/*"]
+  },
+  "d1_databases": [
+    {
+      "binding": "BOSS_MESSAGE_DB",
+      "database_name": "boss-message-box",
+      "database_id": "00000000-0000-0000-0000-000000000000",
+      "migrations_dir": "migrations"
+    }
+  ],
+  "r2_buckets": [
+    {
+      "binding": "BOSS_MESSAGE_IMAGES",
+      "bucket_name": "boss-message-box-images"
+    }
+  ],
+  "images": {
+    "binding": "IMAGES"
+  },
+  "triggers": {
+    "crons": ["*/15 * * * *"]
+  },
+  "vars": {
+    "APP_ENV": "production",
+    "SMS_PROVIDER": "alibaba",
+    "TURNSTILE_SITE_KEY": "replace-with-turnstile-site-key",
+    "TURNSTILE_EXPECTED_HOSTNAMES": "replace-with-production-hostname",
+    "PRIVACY_POLICY_VERSION": "2026-09-03",
+    "LIVESTREAM_POLICY_VERSION": "2026-09-03"
+  },
+  "observability": {
+    "enabled": true,
+    "logs": {
+      "enabled": true,
+      "invocation_logs": true
+    }
+  }
+}
