@@ -1,4 +1,4 @@
-import type { PublicFeedback, Topic } from "../../src/shared/contracts";
+import type { PublicFeedback, PublicReply, Topic } from "../../src/shared/contracts";
 import type {
   CreateFeedbackInput,
   CreateFeedbackResult,
@@ -369,8 +369,8 @@ export class D1FeedbackRepository implements FeedbackRepository {
 
     const rows = await this.db
       .prepare(
-        `SELECT f.id, f.topic, f.custom_topic, f.content, f.internal_status, f.reply_content,
-                f.created_at, COUNT(i.id) AS image_count
+        `SELECT f.id, f.topic, f.custom_topic, f.content, f.internal_status, f.reply_type,
+                f.reply_content, f.created_at, f.updated_at, COUNT(i.id) AS image_count
          FROM feedback f
          LEFT JOIN feedback_images i ON i.feedback_id = f.id
          WHERE f.user_id = ?
@@ -384,13 +384,55 @@ export class D1FeedbackRepository implements FeedbackRepository {
         custom_topic: string | null;
         content: string;
         internal_status: string;
+        reply_type: "message" | "livestream" | null;
         reply_content: string | null;
         created_at: number;
+        updated_at: number;
         image_count: number;
       }>();
     if (rows.results.length === 0) return null;
+    const replyRows = await this.db
+      .prepare(
+        `SELECT reply.id, reply.feedback_id, reply.reply_type, reply.content, reply.created_at
+           FROM feedback_replies reply
+           JOIN feedback f ON f.id = reply.feedback_id
+          WHERE f.user_id = ?
+          ORDER BY reply.created_at ASC, reply.id ASC`,
+      )
+      .bind(user.id)
+      .all<{
+        id: string;
+        feedback_id: string;
+        reply_type: "live" | "message";
+        content: string;
+        created_at: number;
+      }>();
+    const repliesByFeedback = new Map<string, PublicReply[]>();
+    for (const reply of replyRows.results) {
+      const replies = repliesByFeedback.get(reply.feedback_id) ?? [];
+      replies.push({
+        id: reply.id,
+        replyType: reply.reply_type,
+        content: reply.content,
+        createdAt: reply.created_at,
+      });
+      repliesByFeedback.set(reply.feedback_id, replies);
+    }
     return rows.results.map((row) => {
-      const replied = row.internal_status === "message_replied" || row.internal_status === "livestream_replied";
+      let replies = repliesByFeedback.get(row.id) ?? [];
+      const legacyReplied =
+        (row.internal_status === "message_replied" || row.internal_status === "livestream_replied") &&
+        row.reply_content &&
+        row.reply_type;
+      if (replies.length === 0 && legacyReplied) {
+        replies = [{
+          id: `legacy-${row.id}`,
+          replyType: row.reply_type === "livestream" ? "live" : "message",
+          content: row.reply_content!,
+          createdAt: row.updated_at,
+        }];
+      }
+      const replied = replies.length > 0;
       return {
         id: row.id,
         topic: row.topic,
@@ -398,7 +440,8 @@ export class D1FeedbackRepository implements FeedbackRepository {
         content: row.content,
         imageCount: Number(row.image_count),
         status: replied ? "replied" : "unreplied",
-        replyContent: replied ? row.reply_content : null,
+        replies,
+        replyContent: replied ? replies.at(-1)?.content ?? null : null,
         createdAt: row.created_at,
       };
     });

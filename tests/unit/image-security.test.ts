@@ -1,6 +1,6 @@
 // @vitest-environment node
 import { describe, expect, it } from "vitest";
-import { MAX_IMAGE_BYTES, validatePrivateWebp } from "../../worker/security/image";
+import { validatePrivateWebp } from "../../worker/security/image";
 
 function writeAscii(target: Uint8Array<ArrayBuffer>, offset: number, value: string): void {
   for (let index = 0; index < value.length; index += 1) {
@@ -54,11 +54,11 @@ describe("private image validation", () => {
     ).rejects.toThrow("图片仍含元数据");
   });
 
-  it("enforces the strict less-than-2-MiB boundary", async () => {
-    await expect(
-      validatePrivateWebp(
-        new File([new Uint8Array(MAX_IMAGE_BYTES)], "too-large.webp", { type: "image/webp" }),
-      ),
-    ).rejects.toThrow("每张图片必须小于 2 MB");
+  it("does not reject a valid image solely because its encoded bytes exceed 2 MiB", async () => {
+    const bytes = webp([chunk("JUNK", new Uint8Array(2 * 1024 * 1024))]);
+    const result = await validatePrivateWebp(
+      new File([bytes], "large-valid.webp", { type: "image/webp" }),
+    );
+    expect(result.byteSize).toBeGreaterThan(2 * 1024 * 1024);
   });
 });

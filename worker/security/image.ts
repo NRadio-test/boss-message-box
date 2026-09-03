@@ -1,6 +1,5 @@
 import { sha256 } from "./crypto";
 
-export const MAX_IMAGE_BYTES = 2 * 1024 * 1024;
 export const MAX_IMAGE_COUNT = 3;
 
 export interface ValidatedImage {
@@ -45,7 +44,7 @@ function readDimensions(bytes: Uint8Array, chunkType: string, dataOffset: number
 }
 
 export async function validatePrivateWebp(file: File): Promise<ValidatedImage> {
-  if (file.size <= 0 || file.size >= MAX_IMAGE_BYTES) throw new Error("每张图片必须小于 2 MB");
+  if (file.size <= 0) throw new Error("图片内容无效，请重新选择");
   const data = await file.arrayBuffer();
   const bytes = new Uint8Array(data);
   if (

@@ -1,0 +1,211 @@
+import { env } from "cloudflare:workers";
+import { beforeEach, describe, expect, it } from "vitest";
+import { D1StudioRepository } from "../../worker/infra/d1-studio-repositories";
+
+const USER_ID = "studio-test-user";
+const ADMIN_ZD = { id: "admin-zd", username: "zd" };
+const ADMIN_FA = { id: "admin-fa", username: "fa" };
+
+async function seedUser(): Promise<void> {
+  await env.BOSS_MESSAGE_DB
+    .prepare(
+      `INSERT INTO users
+        (id, phone_encrypted, phone_hash, douyin_nickname, created_at, updated_at)
+       VALUES (?, 'encrypted-phone', 'studio-phone-hash', '测试昵称', 1000, 1000)`,
+    )
+    .bind(USER_ID)
+    .run();
+}
+
+async function seedFeedback(input: {
+  id: string;
+  createdAt: number;
+  isTodo?: boolean;
+}): Promise<void> {
+  await env.BOSS_MESSAGE_DB
+    .prepare(
+      `INSERT INTO feedback
+        (id, submission_key, user_id, topic, custom_topic, content, internal_status,
+         reply_type, reply_content, privacy_policy_version, privacy_agreed_at,
+         livestream_policy_version, livestream_agreed_at, created_at, updated_at, is_todo)
+       VALUES (?, ?, ?, 'appeal', NULL, ?, 'unprocessed', NULL, NULL,
+               'v1', ?, 'v1', ?, ?, ?, ?)`,
+    )
+    .bind(
+      input.id,
+      `submission-${input.id}`,
+      USER_ID,
+      `留言 ${input.id}`,
+      input.createdAt,
+      input.createdAt,
+      input.createdAt,
+      input.createdAt,
+      input.isTodo ? 1 : 0,
+    )
+    .run();
+}
+
+async function seedReply(input: {
+  id: string;
+  feedbackId: string;
+  type: "live" | "message";
+  adminId: string;
+  createdAt: number;
+}): Promise<void> {
+  await env.BOSS_MESSAGE_DB
+    .prepare(
+      `INSERT INTO feedback_replies
+        (id, feedback_id, reply_type, content, admin_id, created_at)
+       VALUES (?, ?, ?, ?, ?, ?)`,
+    )
+    .bind(
+      input.id,
+      input.feedbackId,
+      input.type,
+      `回复 ${input.id}`,
+      input.adminId,
+      input.createdAt,
+    )
+    .run();
+}
+
+describe("D1 Studio repository", () => {
+  beforeEach(async () => {
+    await env.BOSS_MESSAGE_DB.batch([
+      env.BOSS_MESSAGE_DB.prepare("DELETE FROM audit_logs"),
+      env.BOSS_MESSAGE_DB.prepare("DELETE FROM feedback_replies"),
+      env.BOSS_MESSAGE_DB.prepare("DELETE FROM feedback_images"),
+      env.BOSS_MESSAGE_DB.prepare("DELETE FROM feedback"),
+      env.BOSS_MESSAGE_DB.prepare("DELETE FROM users"),
+      env.BOSS_MESSAGE_DB.prepare("DELETE FROM admin_sessions"),
+    ]);
+    await seedUser();
+  });
+
+  it("uses reply existence for filters and keeps an unreplied todo in both lists", async () => {
+    await seedFeedback({ id: "10000001-feedback", createdAt: 1_001 });
+    await seedFeedback({ id: "10000002-feedback", createdAt: 1_002 });
+    await seedFeedback({ id: "10000003-feedback", createdAt: 1_003 });
+    await seedFeedback({ id: "10000004-feedback", createdAt: 1_004, isTodo: true });
+    await seedReply({
+      id: "both-live",
+      feedbackId: "10000001-feedback",
+      type: "live",
+      adminId: ADMIN_ZD.id,
+      createdAt: 2_001,
+    });
+    await seedReply({
+      id: "both-message",
+      feedbackId: "10000001-feedback",
+      type: "message",
+      adminId: ADMIN_FA.id,
+      createdAt: 2_002,
+    });
+    await seedReply({
+      id: "live-only",
+      feedbackId: "10000002-feedback",
+      type: "live",
+      adminId: ADMIN_ZD.id,
+      createdAt: 2_003,
+    });
+    await seedReply({
+      id: "message-only",
+      feedbackId: "10000003-feedback",
+      type: "message",
+      adminId: ADMIN_FA.id,
+      createdAt: 2_004,
+    });
+
+    const repository = new D1StudioRepository(env.BOSS_MESSAGE_DB);
+    const list = (view: "unreplied" | "replied" | "live" | "message" | "todo") =>
+      repository.listFeedbacks({ view, page: 1, snapshot: null });
+
+    expect((await list("unreplied")).items.map((item) => item.id)).toEqual(["10000004-feedback"]);
+    expect((await list("todo")).items.map((item) => item.id)).toEqual(["10000004-feedback"]);
+    expect((await list("replied")).items.map((item) => item.id)).toEqual([
+      "10000003-feedback",
+      "10000002-feedback",
+      "10000001-feedback",
+    ]);
+    expect((await list("live")).items.map((item) => item.id)).toEqual([
+      "10000002-feedback",
+      "10000001-feedback",
+    ]);
+    expect((await list("message")).items.map((item) => item.id)).toEqual([
+      "10000003-feedback",
+      "10000001-feedback",
+    ]);
+    expect((await repository.getFeedbackSummary("10000001-feedback"))).toMatchObject({
+      status: "replied",
+      replyCount: 2,
+      latestReplyAdmin: "fa",
+      isTodo: false,
+    });
+  });
+
+  it("appends concurrent replies without lost updates and clears todo", async () => {
+    const feedbackId = "20000001-feedback";
+    await seedFeedback({ id: feedbackId, createdAt: 3_000, isTodo: true });
+    const repository = new D1StudioRepository(env.BOSS_MESSAGE_DB);
+
+    const results = await Promise.all([
+      repository.appendReply({
+        id: "reply-zd",
+        feedbackId,
+        replyType: "live",
+        content: "直播回复",
+        admin: ADMIN_ZD,
+        now: 4_000,
+      }),
+      repository.appendReply({
+        id: "reply-fa",
+        feedbackId,
+        replyType: "message",
+        content: "留言回复",
+        admin: ADMIN_FA,
+        now: 4_001,
+      }),
+    ]);
+
+    expect(results.every(Boolean)).toBe(true);
+    const detail = await repository.findFeedback(feedbackId);
+    expect(detail?.replies.map((reply) => reply.id)).toEqual(["reply-zd", "reply-fa"]);
+    expect(detail).toMatchObject({ status: "replied", replyCount: 2, isTodo: false });
+    expect(
+      (await env.BOSS_MESSAGE_DB
+        .prepare("SELECT COUNT(*) AS count FROM audit_logs WHERE feedback_id = ? AND action = 'reply_created'")
+        .bind(feedbackId)
+        .first<{ count: number }>())?.count,
+    ).toBe(2);
+  });
+
+  it("cannot re-add todo when it races with an appended reply", async () => {
+    const feedbackId = "30000001-feedback";
+    await seedFeedback({ id: feedbackId, createdAt: 5_000 });
+    const repository = new D1StudioRepository(env.BOSS_MESSAGE_DB);
+
+    await Promise.all([
+      repository.setTodo({ feedbackId, isTodo: true, adminId: ADMIN_ZD.id, now: 6_000 }),
+      repository.appendReply({
+        id: "race-reply",
+        feedbackId,
+        replyType: "message",
+        content: "并发回复",
+        admin: ADMIN_FA,
+        now: 6_001,
+      }),
+    ]);
+
+    expect(await repository.getFeedbackSummary(feedbackId)).toMatchObject({
+      status: "replied",
+      replyCount: 1,
+      isTodo: false,
+    });
+    expect(
+      (await env.BOSS_MESSAGE_DB
+        .prepare("SELECT is_todo FROM feedback WHERE id = ?")
+        .bind(feedbackId)
+        .first<{ is_todo: number }>())?.is_todo,
+    ).toBe(0);
+  });
+});

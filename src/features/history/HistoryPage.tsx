@@ -74,7 +74,10 @@ export function HistoryPage() {
         </FormField>
         <FormField label="手机号" htmlFor="history-phone" required error={errors.phone}>
           <div className="phone-input">
-            <span aria-hidden="true">+86</span>
+            <span className="phone-prefix" aria-hidden="true">
+              <span>中国大陆</span>
+              <span>+86</span>
+            </span>
             <input
               id="history-phone"
               required
@@ -83,6 +86,7 @@ export function HistoryPage() {
               autoComplete="tel-national"
               value={phone}
               maxLength={13}
+              placeholder="11 位手机号码"
               onChange={(event) => setPhone(event.target.value.replace(/[^\d\s-]/g, ""))}
               aria-invalid={Boolean(errors.phone)}
               aria-describedby={errors.phone ? "history-phone-error" : undefined}

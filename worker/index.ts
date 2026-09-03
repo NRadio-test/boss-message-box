@@ -10,6 +10,9 @@ import { PublicError } from "./core/errors";
 import type { Env } from "./env";
 import { CloudflareImageProcessor } from "./infra/cloudflare-image-processor";
 import {
+  D1AdminSessionRepository,
+} from "./infra/d1-studio-repositories";
+import {
   D1FeedbackRepository,
   D1ImageCleanupRepository,
   D1OtpRepository,
@@ -19,6 +22,7 @@ import {
 import { R2ImageStorage } from "./infra/r2-image-storage";
 import { createSmsProvider, resolveDevelopmentOtpCode } from "./providers/sms";
 import { CloudflareTurnstileVerifier } from "./providers/turnstile";
+import { studioRoutes } from "./routes/studio";
 import { WebCryptoPhoneService } from "./security/crypto";
 import { FeedbackService } from "./services/feedback-service";
 import { ImageCleanupService } from "./services/image-cleanup-service";
@@ -107,10 +111,6 @@ app.post("/api/otp/request", async (context) => {
 });
 
 app.post("/api/feedback", async (context) => {
-  const length = Number(context.req.header("Content-Length") ?? "0");
-  if (Number.isFinite(length) && length > 7 * 1024 * 1024) {
-    throw new PublicError(413, "IMAGE_INVALID", "上传内容过大，每张图片必须小于 2 MB");
-  }
   const contentType = context.req.header("Content-Type") ?? "";
   if (!contentType.startsWith("multipart/form-data")) {
     throw new PublicError(400, "VALIDATION_ERROR", "提交格式无效");
@@ -155,6 +155,8 @@ app.post("/api/history", async (context) => {
   );
 });
 
+app.route("/api/studio", studioRoutes);
+
 app.notFound((context) => context.json({ ok: false, error: { code: "VALIDATION_ERROR", message: "接口不存在" } }, 404));
 
 app.onError((error, context) => {
@@ -185,6 +187,12 @@ export default {
       new D1ImageCleanupRepository(env.BOSS_MESSAGE_DB),
       new R2ImageStorage(env.BOSS_MESSAGE_IMAGES),
     );
-    context.waitUntil(cleanup.run(Date.now()));
+    const now = Date.now();
+    context.waitUntil(
+      Promise.all([
+        cleanup.run(now),
+        new D1AdminSessionRepository(env.BOSS_MESSAGE_DB).deleteExpired(now),
+      ]).then(() => undefined),
+    );
   },
 } satisfies ExportedHandler<Env>;

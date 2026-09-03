@@ -261,6 +261,7 @@
   display: flex;
   align-items: center;
   min-height: 3.25rem;
+  overflow: hidden;
   border: 1px solid var(--color-border);
   border-radius: var(--radius-control);
   background: var(--color-bg-deep);
@@ -268,9 +269,23 @@
 }
 
 .phone-input:focus-within { border-color: var(--color-accent); background: var(--color-surface-raised); }
-.phone-input > span { padding-inline: var(--space-4); color: var(--color-text-secondary); font-family: var(--font-mono); }
+.phone-input:has(input:focus-visible) { outline: 0.1875rem solid var(--color-focus-ring); outline-offset: 0.1875rem; }
+.phone-prefix {
+  display: flex;
+  align-self: stretch;
+  align-items: center;
+  flex: 0 0 auto;
+  gap: var(--space-2);
+  padding-inline: var(--space-4);
+  border-inline-end: 1px solid var(--color-border);
+  background: var(--color-surface);
+  color: var(--color-text-secondary);
+  font-size: var(--type-caption);
+  white-space: nowrap;
+}
+.phone-prefix span:last-child { color: var(--color-text); font-family: var(--font-mono); font-size: var(--type-body-sm); }
 .phone-input input { min-width: 0; border: 0 !important; background: transparent !important; }
-.phone-input input:focus-visible { outline-offset: 0.25rem; }
+.phone-input input:focus-visible { outline: 0; }
 
 .upload-button {
   display: flex;
@@ -484,6 +499,11 @@ dialog {
 
 dialog::backdrop { background: var(--color-backdrop); }
 
+.policy-dialog[open] {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+}
+
 .dialog-header {
   display: flex;
   align-items: flex-start;
@@ -513,7 +533,7 @@ dialog::backdrop { background: var(--color-backdrop); }
 .icon-button svg { width: 1.25rem; height: 1.25rem; }
 
 .policy-content {
-  max-height: calc(100svh - 13rem);
+  min-height: 0;
   padding: 0 var(--space-6) var(--space-6);
   overflow-y: auto;
   overscroll-behavior: contain;

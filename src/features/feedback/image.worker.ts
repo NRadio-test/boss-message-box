@@ -3,8 +3,6 @@ interface CompressMessage {
   file: File;
 }
 
-const MAX_BYTES = 2 * 1024 * 1024;
-
 async function encode(
   bitmap: ImageBitmap,
   maxEdge: number,
@@ -25,13 +23,9 @@ self.onmessage = async (event: MessageEvent<CompressMessage>) => {
   const { id, file } = event.data;
   try {
     const bitmap = await createImageBitmap(file, { imageOrientation: "from-image" });
-    const firstQuality = file.size < 900_000 ? 0.92 : 0.84;
-    let result = await encode(bitmap, 2560, firstQuality);
-    if (result.blob.size >= MAX_BYTES || (file.size > 2_000_000 && result.blob.size > 1_250_000)) {
-      result = await encode(bitmap, 2048, 0.74);
-    }
+    const result = await encode(bitmap, 2560, 0.84);
     bitmap.close();
-    if (result.blob.size >= MAX_BYTES) throw new Error("图片压缩后仍超过 2 MB，请换一张图片");
+    if (result.blob.size <= 0) throw new Error("图片处理失败，请重新选择");
     self.postMessage({ id, ok: true, ...result });
   } catch (error) {
     self.postMessage({

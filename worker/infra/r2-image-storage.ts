@@ -14,6 +14,16 @@ export class R2ImageStorage implements ImageStorage {
     });
   }
 
+  async getPrivate(key: string): Promise<{
+    body: ReadableStream;
+    size: number;
+    etag: string;
+  } | null> {
+    const object = await this.bucket.get(key);
+    if (!object) return null;
+    return { body: object.body, size: object.size, etag: object.httpEtag };
+  }
+
   async delete(key: string): Promise<void> {
     await this.bucket.delete(key);
   }

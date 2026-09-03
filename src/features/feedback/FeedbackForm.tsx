@@ -378,7 +378,7 @@ export function FeedbackForm({ config }: { config: PublicConfig }) {
           index="03"
           label="上传图片"
           htmlFor="images"
-          helper="选填，最多 3 张。大图会先在本机快速压缩并移除拍摄信息。"
+          helper="选填，最多 3 张。图片会在本机压缩一次并移除拍摄信息。"
           error={imageMessage ?? undefined}
         >
           <input
@@ -441,7 +441,10 @@ export function FeedbackForm({ config }: { config: PublicConfig }) {
 
         <FormField index="05" label="手机号" htmlFor="phone" required error={errors.phone}>
           <div className="phone-input">
-            <span aria-hidden="true">+86</span>
+            <span className="phone-prefix" aria-hidden="true">
+              <span>中国大陆</span>
+              <span>+86</span>
+            </span>
             <input
               id="phone"
               required
@@ -450,7 +453,7 @@ export function FeedbackForm({ config }: { config: PublicConfig }) {
               autoComplete="tel-national"
               value={draft.phone}
               maxLength={13}
-              placeholder="请输入中国大陆手机号"
+              placeholder="11 位手机号码"
               onChange={(event) => update("phone", event.target.value.replace(/[^\d\s-]/g, ""))}
               aria-invalid={Boolean(errors.phone)}
               aria-describedby={errors.phone ? "phone-error" : undefined}

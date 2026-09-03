@@ -1,0 +1,103 @@
+import type {
+  StudioAdmin,
+  StudioFeedbackDetail,
+  StudioFeedbackListSuccess,
+  StudioFeedbackSummary,
+  StudioFeedbackView,
+  StudioMode,
+  StudioReply,
+  StudioReplyType,
+  StudioStatsSuccess,
+  StudioUserDetailSuccess,
+} from "../../src/shared/studio-contracts";
+
+export interface AdminRecord extends StudioAdmin {
+  passwordHash: string;
+}
+
+export interface StudioSessionRecord {
+  tokenHash: string;
+  admin: StudioAdmin;
+  mode: StudioMode;
+  expiresAt: number;
+}
+
+export interface AdminRepository {
+  findByUsername(username: string): Promise<AdminRecord | null>;
+  recordSuccessfulLogin(adminId: string, now: number): Promise<void>;
+}
+
+export interface AdminSessionRepository {
+  create(input: {
+    tokenHash: string;
+    adminId: string;
+    mode: StudioMode;
+    createdAt: number;
+    expiresAt: number;
+  }): Promise<void>;
+  findActive(tokenHash: string, now: number): Promise<StudioSessionRecord | null>;
+  setMode(tokenHash: string, mode: StudioMode, now: number): Promise<StudioSessionRecord | null>;
+  delete(tokenHash: string): Promise<void>;
+  deleteExpired(now: number): Promise<void>;
+}
+
+export interface StudioListInput {
+  view: StudioFeedbackView;
+  page: number;
+  snapshot: { createdAt: number; id: string } | null;
+}
+
+export interface StudioSearchInput {
+  queryType: "phone" | "feedback_number" | "nickname";
+  queryValue: string;
+  page: number;
+  snapshot: { createdAt: number; id: string } | null;
+}
+
+export interface StudioImageRecord {
+  objectKey: string;
+  byteSize: number;
+}
+
+export interface PrivateImageReader {
+  getPrivate(key: string): Promise<{
+    body: ReadableStream;
+    size: number;
+    etag: string;
+  } | null>;
+}
+
+export interface StudioRepository {
+  listFeedbacks(input: StudioListInput): Promise<StudioFeedbackListSuccess>;
+  searchFeedbacks(input: StudioSearchInput): Promise<StudioFeedbackListSuccess>;
+  findFeedback(feedbackId: string): Promise<StudioFeedbackDetail | null>;
+  appendReply(input: {
+    id: string;
+    feedbackId: string;
+    replyType: StudioReplyType;
+    content: string;
+    admin: StudioAdmin;
+    now: number;
+  }): Promise<{
+    reply: StudioReply;
+    replyCount: number;
+    latestReplyAdmin: string | null;
+  } | null>;
+  setTodo(input: {
+    feedbackId: string;
+    isTodo: boolean;
+    adminId: string;
+    now: number;
+  }): Promise<boolean | null>;
+  findUser(userId: string): Promise<StudioUserDetailSuccess | null>;
+  findEncryptedPhone(userId: string): Promise<{ phoneHash: string; phoneEncrypted: string } | null>;
+  getStats(todayStartedAt: number): Promise<Omit<StudioStatsSuccess, "ok">>;
+  countNewFeedback(after: { createdAt: number; id: string }): Promise<number>;
+  findImage(feedbackId: string, imageId: string): Promise<StudioImageRecord | null>;
+  feedbackExists(feedbackId: string): Promise<boolean>;
+  getFeedbackSummary(feedbackId: string): Promise<StudioFeedbackSummary | null>;
+}
+
+export interface PasswordVerifier {
+  verify(password: string, encodedHash: string): Promise<boolean>;
+}

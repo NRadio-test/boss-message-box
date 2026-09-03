@@ -42,6 +42,16 @@ try {
     }
     await page.screenshot({ path: `/private/tmp/boss-message-box-${viewport.name}.png`, fullPage: true });
 
+    await page.getByRole("button", { name: "《隐私政策》" }).click();
+    const policyAction = page.getByRole("button", { name: "我知道了" });
+    await policyAction.waitFor();
+    const actionBox = await policyAction.boundingBox();
+    if (!actionBox || actionBox.y < 0 || actionBox.y + actionBox.height > viewport.height) {
+      failures.push("policy action is clipped outside the viewport");
+    }
+    await page.screenshot({ path: `/private/tmp/boss-message-box-policy-${viewport.name}.png` });
+    await policyAction.click();
+
     await page.goto("http://127.0.0.1:5173/my", { waitUntil: "networkidle" });
     await page.getByRole("heading", { name: "查看我的留言" }).waitFor();
     const historyDimensions = await page.evaluate(() => ({

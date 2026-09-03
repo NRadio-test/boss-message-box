@@ -1,5 +1,5 @@
 import type { ImageProcessor, ProcessedImage } from "../core/ports";
-import { MAX_IMAGE_BYTES, validatePrivateWebp } from "../security/image";
+import { validatePrivateWebp } from "../security/image";
 
 const MAX_SOURCE_PIXELS = 20_000_000;
 const MAX_SOURCE_EDGE = 8192;
@@ -9,9 +9,7 @@ export class CloudflareImageProcessor implements ImageProcessor {
   constructor(private readonly images: ImagesBinding) {}
 
   async sanitize(file: File): Promise<ProcessedImage> {
-    if (file.size <= 0 || file.size >= MAX_IMAGE_BYTES) {
-      throw new Error("每张图片必须小于 2 MB");
-    }
+    if (file.size <= 0) throw new Error("图片内容无效，请重新选择");
     const source = await file.arrayBuffer();
     const info = await this.images.info(new Blob([source]).stream());
     if (
@@ -31,12 +29,8 @@ export class CloudflareImageProcessor implements ImageProcessor {
       throw new Error("图片尺寸超出支持范围");
     }
 
-    const first = await this.encode(source, info.width, info.height, TARGET_EDGE, 84);
-    if (first.byteLength < MAX_IMAGE_BYTES) return this.validateOutput(first);
-
-    const fallback = await this.encode(source, info.width, info.height, 2048, 74);
-    if (fallback.byteLength >= MAX_IMAGE_BYTES) throw new Error("图片压缩后仍超过 2 MB，请换一张图片");
-    return this.validateOutput(fallback);
+    const output = await this.encode(source, info.width, info.height, TARGET_EDGE, 84);
+    return this.validateOutput(output);
   }
 
   private async encode(

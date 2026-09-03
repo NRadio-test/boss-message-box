@@ -97,6 +97,10 @@ export type ApiErrorCode =
   | "SMS_UNAVAILABLE"
   | "SUBMISSION_FAILED"
   | "HISTORY_NOT_FOUND"
+  | "AUTH_FAILED"
+  | "UNAUTHORIZED"
+  | "FORBIDDEN"
+  | "NOT_FOUND"
   | "SERVER_ERROR";
 
 export interface ApiErrorBody {
@@ -131,6 +135,13 @@ export interface SubmitSuccess {
   idempotent: boolean;
 }
 
+export interface PublicReply {
+  id: string;
+  replyType: "live" | "message";
+  content: string;
+  createdAt: number;
+}
+
 export interface PublicFeedback {
   id: string;
   topic: Topic;
@@ -138,6 +149,8 @@ export interface PublicFeedback {
   content: string;
   imageCount: number;
   status: "unreplied" | "replied";
+  replies: PublicReply[];
+  /** @deprecated Use replies. Kept for a compatible public API transition. */
   replyContent: string | null;
   createdAt: number;
 }

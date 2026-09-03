@@ -1,4 +1,3 @@
-const MAX_BYTES = 2 * 1024 * 1024;
 const ALLOWED_TYPES = new Set(["image/jpeg", "image/png", "image/webp"]);
 
 export interface CompressedImage {
@@ -29,10 +28,7 @@ async function compressOnMainThread(file: File): Promise<CompressedImage> {
     );
     return { blob, width, height };
   };
-  let result = await encode(2560, file.size < 900_000 ? 0.92 : 0.84);
-  if (result.blob.size >= MAX_BYTES || (file.size > 2_000_000 && result.blob.size > 1_250_000)) {
-    result = await encode(2048, 0.74);
-  }
+  const result = await encode(2560, 0.84);
   bitmap.close();
   return result;
 }
@@ -62,8 +58,6 @@ export async function compressImage(file: File): Promise<CompressedImage> {
   } else {
     result = await compressOnMainThread(file);
   }
-  if (result.blob.size <= 0 || result.blob.size >= MAX_BYTES) {
-    throw new Error("图片压缩后仍超过 2 MB，请换一张图片");
-  }
+  if (result.blob.size <= 0) throw new Error("图片处理失败，请重新选择");
   return result;
 }
