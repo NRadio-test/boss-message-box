@@ -1,4 +1,4 @@
-import { ArrowLeft, ArrowRight, BellSimple } from "@phosphor-icons/react";
+import { ArrowLeft, ArrowRight, BellSimple, FunnelSimple } from "@phosphor-icons/react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useLocation, useOutletContext, useSearchParams } from "react-router-dom";
 import type {
@@ -7,6 +7,7 @@ import type {
   StudioFeedbackView,
   StudioSnapshot,
 } from "../../../shared/studio-contracts";
+import { TOPIC_LABELS, TOPIC_VALUES, type Topic } from "../../../shared/contracts";
 import { getNewStudioFeedbackCount, getStudioFeedbacks, updateStudioTodo } from "../api";
 import { captureReturnContext, restoreListPosition, type StudioReturnContext } from "../navigation-context";
 import { StudioEmpty, StudioError, StudioLoading } from "../components/AsyncState";
@@ -26,12 +27,17 @@ interface ListLocationState {
   restoreContext?: StudioReturnContext;
 }
 
+function readTopic(value: string | null): Topic | null {
+  return value && TOPIC_VALUES.some((topic) => topic === value) ? value as Topic : null;
+}
+
 export function FeedbackListPage({ view }: { view: StudioFeedbackView }) {
   const { liveMode } = useOutletContext<StudioOutletContext>();
   const location = useLocation();
   const [searchParams, setSearchParams] = useSearchParams();
   const requestedPage = Number(searchParams.get("page") ?? "1");
   const page = Number.isSafeInteger(requestedPage) && requestedPage > 0 ? requestedPage : 1;
+  const topic = readTopic(searchParams.get("topic"));
   const [result, setResult] = useState<StudioFeedbackListSuccess | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [reload, setReload] = useState(0);
@@ -54,7 +60,7 @@ export function FeedbackListPage({ view }: { view: StudioFeedbackView }) {
 
   useEffect(() => {
     const controller = new AbortController();
-    getStudioFeedbacks(view, page, snapshot, controller.signal)
+    getStudioFeedbacks(view, page, topic, snapshot, controller.signal)
       .then((value) => {
         setResult(value);
         setError(null);
@@ -76,7 +82,7 @@ export function FeedbackListPage({ view }: { view: StudioFeedbackView }) {
         if (!controller.signal.aborted) setError(reason instanceof Error ? reason.message : "留言列表加载失败");
       });
     return () => controller.abort();
-  }, [page, reload, restoreContext, searchString, setSearchParams, snapshot, view]);
+  }, [page, reload, restoreContext, searchString, setSearchParams, snapshot, topic, view]);
 
   useEffect(() => {
     if (view !== "unreplied" || !snapshot) return;
@@ -85,7 +91,7 @@ export function FeedbackListPage({ view }: { view: StudioFeedbackView }) {
       if (document.visibilityState !== "visible") return;
       controller?.abort();
       controller = new AbortController();
-      void getNewStudioFeedbackCount(snapshot, controller.signal)
+      void getNewStudioFeedbackCount(snapshot, topic, controller.signal)
         .then((value) => setNewCount(value.count))
         .catch(() => undefined);
     };
@@ -94,7 +100,20 @@ export function FeedbackListPage({ view }: { view: StudioFeedbackView }) {
       window.clearInterval(interval);
       controller?.abort();
     };
-  }, [snapshot, view]);
+  }, [snapshot, topic, view]);
+
+  const changeTopic = (nextTopic: string) => {
+    const next = new URLSearchParams(searchParams);
+    if (nextTopic) next.set("topic", nextTopic);
+    else next.delete("topic");
+    next.delete("page");
+    next.delete("snapshotAt");
+    next.delete("snapshotId");
+    setNewCount(0);
+    setError(null);
+    setResult(null);
+    setSearchParams(next);
+  };
 
   const changePageUrl = (nextPage: number) => {
     const next = new URLSearchParams(searchParams);
@@ -133,6 +152,7 @@ export function FeedbackListPage({ view }: { view: StudioFeedbackView }) {
   };
 
   const copy = VIEW_COPY[view];
+  const topicFilterAvailable = view !== "todo";
   const orderedIds = result?.items.map((item) => item.id) ?? [];
   const currentUrl = `${location.pathname}${location.search}`;
 
@@ -141,7 +161,27 @@ export function FeedbackListPage({ view }: { view: StudioFeedbackView }) {
       {!liveMode && <StudioStats />}
       <header className="studio-page-heading" id="studio-list-heading">
         <div><span className="studio-kicker">留言工作台</span><h1>{copy.title}</h1><p>{copy.description}</p></div>
-        {result && <span className="studio-total">共 {result.pagination.total} 条</span>}
+        {(topicFilterAvailable || result) && (
+          <div className="studio-list-controls">
+            {topicFilterAvailable && (
+              <label className="studio-topic-filter">
+                <FunnelSimple aria-hidden="true" weight="bold" />
+                <span>筛选</span>
+                <select
+                  aria-label="按留言主题筛选"
+                  value={topic ?? ""}
+                  onChange={(event) => changeTopic(event.target.value)}
+                >
+                  <option value="">全部主题</option>
+                  {TOPIC_VALUES.map((value) => (
+                    <option key={value} value={value}>{TOPIC_LABELS[value]}</option>
+                  ))}
+                </select>
+              </label>
+            )}
+            {result && <span className="studio-total">共 {result.pagination.total} 条</span>}
+          </div>
+        )}
       </header>
 
       {newCount > 0 && (
@@ -154,7 +194,12 @@ export function FeedbackListPage({ view }: { view: StudioFeedbackView }) {
 
       {error && <StudioError message={error} onRetry={() => { setError(null); setResult(null); setReload((value) => value + 1); }} />}
       {!error && !result && <StudioLoading label="正在加载留言" />}
-      {!error && result?.items.length === 0 && <StudioEmpty title="这里暂时是空的" description={copy.empty} />}
+      {!error && result?.items.length === 0 && (
+        <StudioEmpty
+          title={topic ? "这个主题暂时没有留言" : "这里暂时是空的"}
+          description={topic ? `没有找到“${TOPIC_LABELS[topic]}”主题的留言。` : copy.empty}
+        />
+      )}
       {!error && result && result.items.length > 0 && (
         <div className="studio-feedback-grid">
           {result.items.map((item) => (

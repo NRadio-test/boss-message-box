@@ -16,6 +16,8 @@ export const TOPIC_LABELS: Record<(typeof TOPIC_VALUES)[number], string> = {
   other: "其他",
 };
 
+export const topicSchema = z.enum(TOPIC_VALUES, { message: "请选择留言主题" });
+
 export const phoneSchema = z
   .string()
   .transform((value) => value.replace(/[\s-]/g, "").replace(/^\+?86/, ""))
@@ -31,7 +33,7 @@ export const nicknameSchema = z
 export const feedbackFieldsSchema = z
   .object({
     submissionKey: z.string().uuid("提交标识无效"),
-    topic: z.enum(TOPIC_VALUES, { message: "请选择留言主题" }),
+    topic: topicSchema,
     customTopic: z.string().trim().max(60, "留言主题不能超过 60 个字符").nullable(),
     content: z
       .string()

@@ -315,7 +315,7 @@ export function FeedbackForm({ config }: { config: PublicConfig }) {
       <section className="page-intro" aria-labelledby="feedback-title">
         <div className="signal-caption"><span /> 直播留言通道</div>
         <h1 id="feedback-title">想说什么，直接写下来</h1>
-        <p>产品问题、使用反馈、投诉或建议都会进入直播处理流程。通常只需要 2 分钟。</p>
+        <p>产品问题、使用反馈、投诉或建议，统统端上来拷打张导！</p>
       </section>
 
       {recovered && (
@@ -378,7 +378,7 @@ export function FeedbackForm({ config }: { config: PublicConfig }) {
           index="03"
           label="上传图片"
           htmlFor="images"
-          helper="选填，最多 3 张。图片会在本机压缩一次并移除拍摄信息。"
+          helper="选填，最多 3 张。"
           error={imageMessage ?? undefined}
         >
           <input

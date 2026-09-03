@@ -10,6 +10,7 @@ import type {
   StudioStatsSuccess,
   StudioUserDetailSuccess,
 } from "../../src/shared/studio-contracts";
+import type { Topic } from "../../src/shared/contracts";
 
 export interface AdminRecord extends StudioAdmin {
   passwordHash: string;
@@ -43,6 +44,7 @@ export interface AdminSessionRepository {
 
 export interface StudioListInput {
   view: StudioFeedbackView;
+  topic: Topic | null;
   page: number;
   snapshot: { createdAt: number; id: string } | null;
 }
@@ -92,7 +94,7 @@ export interface StudioRepository {
   findUser(userId: string): Promise<StudioUserDetailSuccess | null>;
   findEncryptedPhone(userId: string): Promise<{ phoneHash: string; phoneEncrypted: string } | null>;
   getStats(todayStartedAt: number): Promise<Omit<StudioStatsSuccess, "ok">>;
-  countNewFeedback(after: { createdAt: number; id: string }): Promise<number>;
+  countNewFeedback(after: { createdAt: number; id: string }, topic: Topic | null): Promise<number>;
   findImage(feedbackId: string, imageId: string): Promise<StudioImageRecord | null>;
   feedbackExists(feedbackId: string): Promise<boolean>;
   getFeedbackSummary(feedbackId: string): Promise<StudioFeedbackSummary | null>;

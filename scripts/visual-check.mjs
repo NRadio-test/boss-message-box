@@ -106,7 +106,7 @@ try {
     }
 
     if (viewport.width < 1024) {
-      await page.locator(".studio-mobile-menu summary").click();
+      await page.locator(".studio-mobile-menu > summary").click();
       await page.locator(".studio-mobile-menu[open] .studio-logout-row").click();
     } else {
       const desktopLogout = page.locator('.studio-sidebar .studio-icon-button[aria-label="退出登录"]');

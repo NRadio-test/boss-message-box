@@ -12,7 +12,7 @@ import {
   type StudioTodoSuccess,
   type StudioUserDetailSuccess,
 } from "../../src/shared/studio-contracts";
-import { phoneSchema } from "../../src/shared/contracts";
+import { phoneSchema, type Topic } from "../../src/shared/contracts";
 import { PublicError } from "../core/errors";
 import type {
   PrivateImageReader,
@@ -42,6 +42,7 @@ export class StudioService {
 
   list(input: {
     view: StudioFeedbackView;
+    topic: Topic | null;
     page: number;
     snapshot: StudioSnapshot | null;
   }): Promise<StudioFeedbackListSuccess> {
@@ -167,8 +168,11 @@ export class StudioService {
     return { ok: true, ...(await this.dependencies.studio.getStats(macauDayStartedAt(now))) };
   }
 
-  async newFeedbackCount(after: StudioSnapshot): Promise<StudioNewFeedbackCountSuccess> {
-    return { ok: true, count: await this.dependencies.studio.countNewFeedback(after) };
+  async newFeedbackCount(
+    after: StudioSnapshot,
+    topic: Topic | null,
+  ): Promise<StudioNewFeedbackCountSuccess> {
+    return { ok: true, count: await this.dependencies.studio.countNewFeedback(after, topic) };
   }
 
   async image(feedbackId: string, imageId: string): Promise<{
@@ -183,4 +187,3 @@ export class StudioService {
     return object;
   }
 }
-

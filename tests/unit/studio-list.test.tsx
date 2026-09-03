@@ -99,8 +99,37 @@ describe("Studio new-feedback polling", () => {
     await user.click(screen.getByRole("button", { name: "查看" }));
     await waitFor(() => expect(mocks.getFeedbacks.mock.calls.length).toBeGreaterThan(1));
     expect(mocks.getFeedbacks.mock.calls.some((call) =>
-      call[0] === "unreplied" && call[1] === 1 && call[2] === null,
+      call[0] === "unreplied" && call[1] === 1 && call[2] === null && call[3] === null,
     )).toBe(true);
     await waitFor(() => expect(scrollIntoView).toHaveBeenCalled());
+  });
+
+  it("filters the full list by topic and clears the old page snapshot", async () => {
+    mocks.getFeedbacks.mockResolvedValue(response);
+    mocks.getStats.mockResolvedValue({
+      ok: true,
+      todayFeedback: 1,
+      unreplied: 1,
+      todo: 0,
+      todayReplied: 0,
+    });
+
+    const user = userEvent.setup();
+    render(
+      <MemoryRouter initialEntries={[`/studio/unreplied?page=2&snapshotAt=${snapshot.createdAt}&snapshotId=${snapshot.id}`]}>
+        <Routes>
+          <Route element={<Outlet context={{ liveMode: false }} />}>
+            <Route path="/studio/unreplied" element={<FeedbackListPage view="unreplied" />} />
+          </Route>
+        </Routes>
+      </MemoryRouter>,
+    );
+
+    await screen.findByText("页面保持测试");
+    await user.selectOptions(screen.getByRole("combobox", { name: "按留言主题筛选" }), "appeal");
+
+    await waitFor(() => expect(mocks.getFeedbacks.mock.calls.some((call) =>
+      call[0] === "unreplied" && call[1] === 1 && call[2] === "appeal" && call[3] === null,
+    )).toBe(true));
   });
 });

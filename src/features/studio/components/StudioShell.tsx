@@ -30,18 +30,35 @@ function StudioBrand() {
 }
 
 function StudioNavigation({ afterNavigate }: { afterNavigate?: () => void }) {
+  const location = useLocation();
+  const repliedActive = location.pathname.startsWith("/studio/replied/");
+  const [repliedOpen, setRepliedOpen] = useState(true);
   return (
-    <nav className="studio-nav" aria-label="Studio 导航" onClick={afterNavigate}>
+    <nav
+      className="studio-nav"
+      aria-label="Studio 导航"
+      onClick={(event) => {
+        if ((event.target as HTMLElement).closest("a")) afterNavigate?.();
+      }}
+    >
       <span className="studio-nav-label">留言</span>
       <NavLink to="/studio/unreplied"><SquaresFour aria-hidden="true" weight="bold" />未回复</NavLink>
-      <div className="studio-nav-group">
-        <NavLink to="/studio/replied/all"><CheckCircle aria-hidden="true" weight="bold" />已回复</NavLink>
+      <details
+        className="studio-nav-group"
+        open={repliedOpen}
+        onToggle={(event) => setRepliedOpen(event.currentTarget.open)}
+      >
+        <summary className={repliedActive ? "active" : undefined}>
+          <CheckCircle aria-hidden="true" weight="bold" />
+          <span>已回复</span>
+          <CaretDown className="studio-nav-caret" aria-hidden="true" weight="bold" />
+        </summary>
         <div className="studio-subnav">
           <NavLink to="/studio/replied/all">全部已回复</NavLink>
           <NavLink to="/studio/replied/live">直播回复</NavLink>
           <NavLink to="/studio/replied/message">留言回复</NavLink>
         </div>
-      </div>
+      </details>
       <span className="studio-nav-label">处理</span>
       <NavLink to="/studio/todo"><ListChecks aria-hidden="true" weight="bold" />待办</NavLink>
     </nav>

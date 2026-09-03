@@ -14,6 +14,7 @@ import type {
   StudioTodoSuccess,
   StudioUserDetailSuccess,
 } from "../../shared/studio-contracts";
+import type { Topic } from "../../shared/contracts";
 
 interface ErrorResponse {
   error?: { message?: string; fieldErrors?: Record<string, string>; retryAfterSeconds?: number };
@@ -85,10 +86,12 @@ export function getStudioStats(signal?: AbortSignal): Promise<StudioStatsSuccess
 export function getStudioFeedbacks(
   view: StudioFeedbackView,
   page: number,
+  topic?: Topic | null,
   snapshot?: StudioSnapshot | null,
   signal?: AbortSignal,
 ): Promise<StudioFeedbackListSuccess> {
   const query = new URLSearchParams({ view, page: String(page) });
+  if (topic) query.set("topic", topic);
   if (snapshot) {
     query.set("snapshotCreatedAt", String(snapshot.createdAt));
     query.set("snapshotId", snapshot.id);
@@ -140,11 +143,13 @@ export function revealStudioPhone(userId: string): Promise<StudioPhoneRevealSucc
 
 export function getNewStudioFeedbackCount(
   snapshot: StudioSnapshot,
+  topic?: Topic | null,
   signal?: AbortSignal,
 ): Promise<StudioNewFeedbackCountSuccess> {
   const query = new URLSearchParams({
     afterCreatedAt: String(snapshot.createdAt),
     afterId: snapshot.id,
   });
+  if (topic) query.set("topic", topic);
   return request(`/api/studio/new-feedback-count?${query}`, { signal });
 }

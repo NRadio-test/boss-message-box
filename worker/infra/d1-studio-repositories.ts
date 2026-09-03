@@ -181,7 +181,13 @@ export class D1StudioRepository implements StudioRepository {
   constructor(private readonly db: D1Database) {}
 
   async listFeedbacks(input: StudioListInput): Promise<StudioFeedbackListSuccess> {
-    return this.listWithFilter(viewFilter(input.view), [], input.page, input.snapshot);
+    const filter = viewFilter(input.view);
+    return this.listWithFilter(
+      input.topic ? `(${filter}) AND f.topic = ?` : filter,
+      input.topic ? [input.topic] : [],
+      input.page,
+      input.snapshot,
+    );
   }
 
   async searchFeedbacks(input: StudioSearchInput): Promise<StudioFeedbackListSuccess> {
@@ -419,13 +425,17 @@ export class D1StudioRepository implements StudioRepository {
     };
   }
 
-  async countNewFeedback(after: { createdAt: number; id: string }): Promise<number> {
+  async countNewFeedback(
+    after: { createdAt: number; id: string },
+    topic: Topic | null,
+  ): Promise<number> {
+    const topicFilter = topic ? " AND topic = ?" : "";
     const row = await this.db
       .prepare(
         `SELECT COUNT(*) AS count FROM feedback
-          WHERE created_at > ? OR (created_at = ? AND id > ?)`,
+          WHERE (created_at > ? OR (created_at = ? AND id > ?))${topicFilter}`,
       )
-      .bind(after.createdAt, after.createdAt, after.id)
+      .bind(after.createdAt, after.createdAt, after.id, ...(topic ? [topic] : []))
       .first<{ count: number }>();
     return Number(row?.count ?? 0);
   }
@@ -522,4 +532,3 @@ export class D1StudioRepository implements StudioRepository {
     };
   }
 }
-

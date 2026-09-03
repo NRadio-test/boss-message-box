@@ -9,6 +9,7 @@ import {
   studioSearchSchema,
   type StudioSessionSuccess,
 } from "../../src/shared/studio-contracts";
+import { topicSchema } from "../../src/shared/contracts";
 import { PublicError } from "../core/errors";
 import type { StudioSessionRecord } from "../core/studio-ports";
 import type { Env } from "../env";
@@ -40,6 +41,7 @@ const imageIdSchema = z.string().uuid("图片标识无效");
 const listQuerySchema = z
   .object({
     view: studioFeedbackViewSchema.optional().default("unreplied"),
+    topic: topicSchema.optional(),
     page: z.coerce.number().int().min(1).max(10_000).optional().default(1),
     snapshotCreatedAt: z.coerce.number().int().nonnegative().optional(),
     snapshotId: z.string().uuid().optional(),
@@ -52,6 +54,7 @@ const listQuerySchema = z
 const newFeedbackQuerySchema = z.object({
   afterCreatedAt: z.coerce.number().int().nonnegative(),
   afterId: z.string().uuid(),
+  topic: topicSchema.optional(),
 });
 
 function services(env: Env): {
@@ -178,6 +181,7 @@ studioRoutes.get("/feedbacks", async (context) => {
   return context.json(
     await services(context.env).studio.list({
       view: parsed.data.view,
+      topic: parsed.data.topic ?? null,
       page: parsed.data.page,
       snapshot:
         parsed.data.snapshotCreatedAt === undefined
@@ -268,10 +272,13 @@ studioRoutes.get("/new-feedback-count", async (context) => {
   const parsed = newFeedbackQuerySchema.safeParse(context.req.query());
   if (!parsed.success) throw validationError(parsed.error);
   return context.json(
-    await services(context.env).studio.newFeedbackCount({
-      createdAt: parsed.data.afterCreatedAt,
-      id: parsed.data.afterId,
-    }),
+    await services(context.env).studio.newFeedbackCount(
+      {
+        createdAt: parsed.data.afterCreatedAt,
+        id: parsed.data.afterId,
+      },
+      parsed.data.topic ?? null,
+    ),
   );
 });
 
@@ -291,4 +298,3 @@ studioRoutes.get("/feedbacks/:feedbackId/images/:imageId", async (context) => {
   });
   return new Response(object.body, { headers });
 });
-

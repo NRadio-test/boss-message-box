@@ -138,6 +138,20 @@ describe("Studio API", () => {
     const { cookie } = await login();
     const authenticated = { Cookie: cookie };
 
+    const appealList = await api("/api/studio/feedbacks?view=unreplied&topic=appeal", {
+      headers: authenticated,
+    });
+    expect(appealList.status).toBe(200);
+    expect(await appealList.json()).toMatchObject({
+      items: [{ id: seeded.feedbackId, topic: "appeal" }],
+      pagination: { total: 1 },
+    });
+    const emptyTopicList = await api("/api/studio/feedbacks?view=unreplied&topic=released_hardware", {
+      headers: authenticated,
+    });
+    expect(await emptyTopicList.json()).toMatchObject({ items: [], pagination: { total: 0 } });
+    expect((await api("/api/studio/feedbacks?topic=not-a-topic", { headers: authenticated })).status).toBe(400);
+
     const detailResponse = await api(`/api/studio/feedbacks/${seeded.feedbackId}`, {
       headers: authenticated,
     });

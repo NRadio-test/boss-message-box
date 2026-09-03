@@ -21,6 +21,7 @@ async function seedFeedback(input: {
   id: string;
   createdAt: number;
   isTodo?: boolean;
+  topic?: "released_hardware" | "released_software" | "unreleased_product" | "appeal" | "other";
 }): Promise<void> {
   await env.BOSS_MESSAGE_DB
     .prepare(
@@ -28,13 +29,14 @@ async function seedFeedback(input: {
         (id, submission_key, user_id, topic, custom_topic, content, internal_status,
          reply_type, reply_content, privacy_policy_version, privacy_agreed_at,
          livestream_policy_version, livestream_agreed_at, created_at, updated_at, is_todo)
-       VALUES (?, ?, ?, 'appeal', NULL, ?, 'unprocessed', NULL, NULL,
+       VALUES (?, ?, ?, ?, NULL, ?, 'unprocessed', NULL, NULL,
                'v1', ?, 'v1', ?, ?, ?, ?)`,
     )
     .bind(
       input.id,
       `submission-${input.id}`,
       USER_ID,
+      input.topic ?? "appeal",
       `留言 ${input.id}`,
       input.createdAt,
       input.createdAt,
@@ -118,7 +120,7 @@ describe("D1 Studio repository", () => {
 
     const repository = new D1StudioRepository(env.BOSS_MESSAGE_DB);
     const list = (view: "unreplied" | "replied" | "live" | "message" | "todo") =>
-      repository.listFeedbacks({ view, page: 1, snapshot: null });
+      repository.listFeedbacks({ view, topic: null, page: 1, snapshot: null });
 
     expect((await list("unreplied")).items.map((item) => item.id)).toEqual(["10000004-feedback"]);
     expect((await list("todo")).items.map((item) => item.id)).toEqual(["10000004-feedback"]);
@@ -217,19 +219,28 @@ describe("D1 Studio repository", () => {
       });
     }
     const repository = new D1StudioRepository(env.BOSS_MESSAGE_DB);
-    const firstPage = await repository.listFeedbacks({ view: "unreplied", page: 1, snapshot: null });
+    const firstPage = await repository.listFeedbacks({ view: "unreplied", topic: null, page: 1, snapshot: null });
     expect(firstPage.items).toHaveLength(30);
     expect(firstPage.items[0]?.id).toBe("0000001e-feedback");
     expect(firstPage.pagination).toMatchObject({ pageSize: 30, total: 31, totalPages: 2 });
 
-    await seedFeedback({ id: "ffffffff-feedback", createdAt: 20_000 });
+    await seedFeedback({ id: "ffffffff-feedback", createdAt: 20_000, topic: "released_software" });
     const secondPage = await repository.listFeedbacks({
       view: "unreplied",
+      topic: null,
       page: 2,
       snapshot: firstPage.snapshot,
     });
     expect(secondPage.items.map((item) => item.id)).toEqual(["00000000-feedback"]);
-    expect(await repository.countNewFeedback(firstPage.snapshot!)).toBe(1);
+    expect(await repository.countNewFeedback(firstPage.snapshot!, null)).toBe(1);
+    expect(await repository.countNewFeedback(firstPage.snapshot!, "appeal")).toBe(0);
+    expect(await repository.countNewFeedback(firstPage.snapshot!, "released_software")).toBe(1);
+    expect((await repository.listFeedbacks({
+      view: "unreplied",
+      topic: "released_software",
+      page: 1,
+      snapshot: null,
+    })).items.map((item) => item.id)).toEqual(["ffffffff-feedback"]);
 
     expect((await repository.searchFeedbacks({
       queryType: "phone",
