@@ -23,9 +23,6 @@ export interface StoredImageInput {
 export interface CreateFeedbackInput {
   id: string;
   submissionKey: string;
-  userId: string;
-  phoneHash: string;
-  phoneEncrypted: string;
   nickname: string;
   topic: Topic;
   customTopic: string | null;
@@ -34,7 +31,7 @@ export interface CreateFeedbackInput {
   privacyAgreedAt: number;
   livestreamPolicyVersion: string;
   livestreamAgreedAt: number;
-  challengeId: string;
+  beijingDay: string;
   images: StoredImageInput[];
   now: number;
 }
@@ -42,16 +39,32 @@ export interface CreateFeedbackInput {
 export type CreateFeedbackResult =
   | { status: "created"; feedbackId: string; createdAt: number }
   | { status: "idempotent"; feedbackId: string; createdAt: number }
-  | { status: "nickname_mismatch" }
-  | { status: "otp_consumed" };
+  | { status: "daily_limit" };
 
 export interface FeedbackRepository {
   findIdempotent(
     submissionKey: string,
-    phoneHash: string,
   ): Promise<{ feedbackId: string; createdAt: number } | null>;
-  createWithUserAndConsumeOtp(input: CreateFeedbackInput): Promise<CreateFeedbackResult>;
-  findHistory(phoneHash: string, nickname: string): Promise<PublicFeedback[] | null>;
+  hasReachedDailyLimit(nickname: string, beijingDay: string): Promise<boolean>;
+  create(input: CreateFeedbackInput): Promise<CreateFeedbackResult>;
+  findHistory(nickname: string): Promise<PublicFeedback[] | null>;
+  setModerationResult(input: {
+    feedbackId: string;
+    status: "kept" | "filtered" | "failed";
+    category: "valid_feedback" | "abusive" | "meaningless" | "uncertain" | null;
+    reason: string | null;
+    now: number;
+  }): Promise<void>;
+}
+
+export interface AiModerationDecision {
+  decision: "keep" | "filter";
+  category: "valid_feedback" | "abusive" | "meaningless" | "uncertain";
+  reason: string;
+}
+
+export interface AiModerationProvider {
+  classify(input: { topic: string; content: string }): Promise<AiModerationDecision>;
 }
 
 export interface ImageStorage {

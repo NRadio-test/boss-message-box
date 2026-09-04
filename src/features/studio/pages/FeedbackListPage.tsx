@@ -21,6 +21,7 @@ const VIEW_COPY: Record<StudioFeedbackView, { title: string; description: string
   live: { title: "直播回复", description: "包含至少一条直播回复的留言。", empty: "目前还没有直播回复。" },
   message: { title: "留言回复", description: "包含至少一条留言回复的留言。", empty: "目前还没有留言回复。" },
   todo: { title: "待办", description: "按留言原始提交时间从新到旧排列。", empty: "待办已经处理完了。" },
+  filtered: { title: "AI 已过滤", description: "AI 或管理员标记的纯辱骂与无意义留言。", empty: "目前没有已过滤留言。" },
 };
 
 interface ListLocationState {
@@ -209,6 +210,11 @@ export function FeedbackListPage({ view }: { view: StudioFeedbackView }) {
               liveMode={liveMode}
               todoBusy={todoBusy === item.id}
               onTodoChange={(selected) => void toggleTodo(selected)}
+              liveContext={
+                view === "unreplied" || view === "todo"
+                  ? { view, topic }
+                  : undefined
+              }
               returnContext={captureReturnContext(
                 currentUrl,
                 item.id,

@@ -98,6 +98,17 @@ export interface StudioRepository {
   findImage(feedbackId: string, imageId: string): Promise<StudioImageRecord | null>;
   feedbackExists(feedbackId: string): Promise<boolean>;
   getFeedbackSummary(feedbackId: string): Promise<StudioFeedbackSummary | null>;
+  setModeration(input: {
+    feedbackId: string;
+    filtered: boolean;
+    adminId: string;
+    now: number;
+  }): Promise<{ moderationStatus: "filtered" | "kept"; isTodo: false } | null>;
+  findNextFeedback(input: {
+    currentFeedbackId: string;
+    view: "unreplied" | "todo";
+    topic: Topic | null;
+  }): Promise<string | null>;
 }
 
 export interface PasswordVerifier {

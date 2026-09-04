@@ -4,6 +4,7 @@ import {
   CheckCircle,
   ListChecks,
   MagnifyingGlass,
+  ShieldWarning,
   SignOut,
   SquaresFour,
   X,
@@ -59,6 +60,7 @@ function StudioNavigation({ afterNavigate }: { afterNavigate?: () => void }) {
           <NavLink to="/studio/replied/message">留言回复</NavLink>
         </div>
       </details>
+      <NavLink to="/studio/filtered"><ShieldWarning aria-hidden="true" weight="bold" />AI 已过滤</NavLink>
       <span className="studio-nav-label">处理</span>
       <NavLink to="/studio/todo"><ListChecks aria-hidden="true" weight="bold" />待办</NavLink>
     </nav>
@@ -87,6 +89,8 @@ export function StudioShell() {
   const liveRequested = searchParams.get("mode") === "live";
   const liveMode = liveRequested || mode === "live";
   const liveModeReady = !liveRequested || mode === "live";
+  const liveEntryAvailable =
+    location.pathname === "/studio/unreplied" || location.pathname === "/studio/todo";
 
   useEffect(() => {
     if (modeActionRef.current) return;
@@ -205,10 +209,12 @@ export function StudioShell() {
         <StudioBrand />
         <StudioNavigation />
         <div className="studio-sidebar-footer">
-          <button type="button" className="studio-live-toggle" disabled={modeBusy} onClick={() => void enterLiveMode()}>
-            <Broadcast aria-hidden="true" weight="bold" />
-            <span><strong>直播展示模式</strong><small>聚焦留言与现场回复</small></span>
-          </button>
+          {liveEntryAvailable && (
+            <button type="button" className="studio-live-toggle" disabled={modeBusy} onClick={() => void enterLiveMode()}>
+              <Broadcast aria-hidden="true" weight="bold" />
+              <span><strong>直播展示模式</strong><small>聚焦留言与现场回复</small></span>
+            </button>
+          )}
           <div className="studio-admin-row">
             <span><small>当前账号</small><strong>{admin?.username}</strong></span>
             <button type="button" className="studio-icon-button" aria-label="退出登录" onClick={() => setLogoutOpen(true)}>
@@ -224,9 +230,11 @@ export function StudioShell() {
           <summary><span>导航</span><CaretDown aria-hidden="true" weight="bold" /></summary>
           <div className="studio-mobile-menu-panel">
             <StudioNavigation afterNavigate={() => mobileNavRef.current?.removeAttribute("open")} />
-            <button type="button" className="studio-live-toggle" disabled={modeBusy} onClick={() => void enterLiveMode()}>
-              <Broadcast aria-hidden="true" weight="bold" />直播展示模式
-            </button>
+            {liveEntryAvailable && (
+              <button type="button" className="studio-live-toggle" disabled={modeBusy} onClick={() => void enterLiveMode()}>
+                <Broadcast aria-hidden="true" weight="bold" />直播展示模式
+              </button>
+            )}
             <button type="button" className="studio-logout-row" onClick={() => setLogoutOpen(true)}>
               <SignOut aria-hidden="true" weight="bold" />退出登录
             </button>
@@ -238,12 +246,12 @@ export function StudioShell() {
         <header className="studio-toolbar">
           <form className="studio-search" role="search" onSubmit={submitSearch}>
             <MagnifyingGlass aria-hidden="true" />
-            <label className="sr-only" htmlFor="studio-search">搜索手机号、抖音昵称或留言编号</label>
+            <label className="sr-only" htmlFor="studio-search">搜索抖音昵称、留言编号或旧手机号</label>
             <input
               id="studio-search"
               value={search}
               maxLength={100}
-              placeholder="搜索手机号 / 抖音昵称 / 留言编号"
+              placeholder="搜索抖音昵称 / 留言编号（兼容旧手机号）"
               onChange={(event) => setSearch(event.target.value)}
             />
             <button type="submit">搜索</button>

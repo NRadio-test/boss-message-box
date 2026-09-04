@@ -29,7 +29,6 @@ describe("public history replies", () => {
     const user = userEvent.setup();
     render(<HistoryPage />);
     await user.type(screen.getByRole("textbox", { name: /抖音昵称/u }), "测试昵称");
-    await user.type(screen.getByRole("textbox", { name: /手机号/u }), "13906325777");
     await user.click(screen.getByRole("button", { name: "查询留言" }));
 
     const replyBlocks = await screen.findAllByText("官方回复");
@@ -40,5 +39,7 @@ describe("public history replies", () => {
     expect(screen.getByText(/留言回复/u)).toBeInTheDocument();
     expect(text).not.toContain("admin-zd");
     expect(text).not.toContain("fa");
+    const request = vi.mocked(fetch).mock.calls[0];
+    expect(JSON.parse(String(request?.[1]?.body))).toEqual({ nickname: "测试昵称" });
   });
 });

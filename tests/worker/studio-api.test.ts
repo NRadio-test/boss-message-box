@@ -49,11 +49,12 @@ async function seedFeedbackWithImage(): Promise<{
     testEnv.BOSS_MESSAGE_DB
       .prepare(
         `INSERT INTO feedback
-          (id, submission_key, user_id, topic, custom_topic, content, internal_status,
+          (id, submission_key, user_id, douyin_nickname, topic, custom_topic, content, internal_status,
            reply_type, reply_content, privacy_policy_version, privacy_agreed_at,
-           livestream_policy_version, livestream_agreed_at, created_at, updated_at, is_todo)
-         VALUES (?, ?, ?, 'appeal', NULL, '需要处理的留言', 'unprocessed', NULL, NULL,
-                 'v1', ?, 'v1', ?, ?, ?, 1)`,
+           livestream_policy_version, livestream_agreed_at, moderation_status,
+           created_at, updated_at, is_todo)
+         VALUES (?, ?, ?, '接口测试昵称', 'appeal', NULL, '需要处理的留言', 'unprocessed', NULL, NULL,
+                 'v1', ?, 'v1', ?, 'kept', ?, ?, 1)`,
       )
       .bind(feedbackId, crypto.randomUUID(), userId, now, now, now, now),
     testEnv.BOSS_MESSAGE_DB
@@ -232,7 +233,7 @@ describe("Studio API", () => {
 
     const publicHistory = await api("/api/history", {
       method: "POST",
-      body: JSON.stringify({ phone: "13906325777", nickname: "接口测试昵称" }),
+      body: JSON.stringify({ nickname: "接口测试昵称" }),
     });
     const publicHistoryText = await publicHistory.text();
     expect(publicHistory.status).toBe(200);

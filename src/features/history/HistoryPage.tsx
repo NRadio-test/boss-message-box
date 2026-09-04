@@ -18,7 +18,6 @@ function formatDate(timestamp: number): string {
 
 export function HistoryPage() {
   const identity = loadIdentity();
-  const [phone, setPhone] = useState(identity?.phone ?? "");
   const [nickname, setNickname] = useState(identity?.nickname ?? "");
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [message, setMessage] = useState<string | null>(null);
@@ -26,7 +25,7 @@ export function HistoryPage() {
   const [items, setItems] = useState<PublicFeedback[] | null>(null);
 
   const submit = async () => {
-    const parsed = historyQuerySchema.safeParse({ phone, nickname });
+    const parsed = historyQuerySchema.safeParse({ nickname });
     if (!parsed.success) {
       const nextErrors: Record<string, string> = {};
       for (const issue of parsed.error.issues) nextErrors[String(issue.path[0])] = issue.message;
@@ -59,7 +58,7 @@ export function HistoryPage() {
       <section className="page-intro">
         <div className="signal-caption"><span /> 留言回执</div>
         <h1>查看我的留言</h1>
-        <p>使用提交时填写的中国大陆手机号和抖音昵称查询，无需短信验证码。</p>
+        <p>输入提交留言时使用的抖音昵称，即可查看同名下的全部留言。</p>
       </section>
       <form className="history-query" noValidate onSubmit={(event) => { event.preventDefault(); void submit(); }}>
         <FormField label="抖音昵称" htmlFor="history-nickname" required error={errors.nickname}>
@@ -69,29 +68,11 @@ export function HistoryPage() {
             value={nickname}
             maxLength={40}
             autoComplete="nickname"
-            enterKeyHint="next"
+            enterKeyHint="search"
             onChange={(event) => setNickname(event.target.value)}
             aria-invalid={Boolean(errors.nickname)}
             aria-describedby={errors.nickname ? "history-nickname-error" : undefined}
           />
-        </FormField>
-        <FormField label="手机号" htmlFor="history-phone" required error={errors.phone}>
-          <div className="phone-input">
-            <span className="phone-prefix" aria-hidden="true">+86</span>
-            <input
-              id="history-phone"
-              required
-              type="tel"
-              inputMode="tel"
-              autoComplete="tel-national"
-              enterKeyHint="search"
-              value={phone}
-              maxLength={13}
-              onChange={(event) => setPhone(event.target.value.replace(/[^\d\s-]/g, ""))}
-              aria-invalid={Boolean(errors.phone)}
-              aria-describedby={errors.phone ? "history-phone-error" : undefined}
-            />
-          </div>
         </FormField>
         {message && <p className="form-message" role="alert">{message}</p>}
         <Button type="submit" loading={loading} loadingLabel="正在查询" icon={<MagnifyingGlass aria-hidden="true" weight="bold" />}>
@@ -106,13 +87,15 @@ export function HistoryPage() {
             {items.map((item) => (
               <li key={item.id} className="message-card">
                 <div className="message-meta">
-                  <span className={`status status--${item.status}`}>{item.status === "replied" ? "已回复" : "未回复"}</span>
+                  <span className={`status status--${item.status}`}>
+                    {item.status === "filtered" ? "已过滤" : item.status === "replied" ? "已回复" : "未回复"}
+                  </span>
                   <span><Clock aria-hidden="true" /> {formatDate(item.createdAt)}</span>
                 </div>
                 <h3>{item.topic === "other" ? item.customTopic : TOPIC_LABELS[item.topic]}</h3>
                 <p className="message-content">{item.content}</p>
                 {item.imageCount > 0 && <div className="image-count"><ImageSquare aria-hidden="true" /> 已提交 {item.imageCount} 张图片</div>}
-                {item.status === "replied" && item.replies.length > 0 && (
+                {item.replies.length > 0 && (
                   <div className="reply-list" aria-label="官方回复">
                     {item.replies.map((reply) => (
                       <div className="reply-block" key={reply.id}>

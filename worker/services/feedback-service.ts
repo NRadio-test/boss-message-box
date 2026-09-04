@@ -5,24 +5,34 @@ import type {
   ImageCleanupRepository,
   ImageProcessor,
   ImageStorage,
-  PhoneCryptoService,
-  RateLimitService,
-  UserRepository,
+  TurnstileVerifier,
 } from "../core/ports";
 import { MAX_IMAGE_COUNT } from "../security/image";
-import type { OtpService } from "./otp-service";
+
+const BEIJING_OFFSET_MS = 8 * 60 * 60 * 1000;
+
+function beijingDay(now: number): string {
+  return new Date(now + BEIJING_OFFSET_MS).toISOString().slice(0, 10);
+}
+
+function secondsUntilNextBeijingDay(now: number): number {
+  const shifted = new Date(now + BEIJING_OFFSET_MS);
+  const nextDay = Date.UTC(
+    shifted.getUTCFullYear(),
+    shifted.getUTCMonth(),
+    shifted.getUTCDate() + 1,
+  ) - BEIJING_OFFSET_MS;
+  return Math.max(1, Math.ceil((nextDay - now) / 1000));
+}
 
 export class FeedbackService {
   constructor(
     private readonly dependencies: {
       feedback: FeedbackRepository;
       imageCleanup: ImageCleanupRepository;
-      users: UserRepository;
       images: ImageStorage;
       imageProcessor: ImageProcessor;
-      phoneCrypto: PhoneCryptoService;
-      rateLimits: RateLimitService;
-      otp: OtpService;
+      turnstile: TurnstileVerifier;
       privacyPolicyVersion: string;
       livestreamPolicyVersion: string;
     },
@@ -31,40 +41,30 @@ export class FeedbackService {
   async submit(input: {
     fields: FeedbackSubmission;
     imageFiles: File[];
+    remoteIp: string | null;
     now: number;
   }): Promise<SubmitSuccess> {
     if (input.imageFiles.length > MAX_IMAGE_COUNT) {
       throw new PublicError(400, "IMAGE_INVALID", "每次留言最多上传 3 张图片");
     }
-    const phoneHash = await this.dependencies.phoneCrypto.hash(input.fields.phone);
-    const idempotent = await this.dependencies.feedback.findIdempotent(
-      input.fields.submissionKey,
-      phoneHash,
-    );
+    const idempotent = await this.dependencies.feedback.findIdempotent(input.fields.submissionKey);
     if (idempotent) return { ok: true, ...idempotent, idempotent: true };
 
-    const user = await this.dependencies.users.findByPhoneHash(phoneHash);
-    if (user && user.nickname !== input.fields.nickname) {
-      throw new PublicError(409, "NICKNAME_MISMATCH", "此手机号已绑定其他抖音昵称，请检查后重试");
-    }
-    const submitLimit = await this.dependencies.rateLimits.consume({
-      operation: "feedback-submit-phone",
-      identity: phoneHash,
-      limit: 10,
-      windowSeconds: 3600,
-      now: input.now,
+    const turnstileValid = await this.dependencies.turnstile.verify({
+      token: input.fields.turnstileToken,
+      remoteIp: input.remoteIp,
+      expectedAction: "feedback_submit",
     });
-    if (!submitLimit.allowed) {
-      throw new PublicError(429, "RATE_LIMITED", "提交较频繁，请稍后再试", {
-        retryAfterSeconds: submitLimit.retryAfterSeconds,
+    if (!turnstileValid) {
+      throw new PublicError(400, "TURNSTILE_FAILED", "安全验证失败，请刷新后重试");
+    }
+
+    const day = beijingDay(input.now);
+    if (await this.dependencies.feedback.hasReachedDailyLimit(input.fields.nickname, day)) {
+      throw new PublicError(429, "RATE_LIMITED", "今天的留言次数已达上限，请明天再来。", {
+        retryAfterSeconds: secondsUntilNextBeijingDay(input.now),
       });
     }
-    await this.dependencies.otp.verify({
-      phoneHash,
-      challengeId: input.fields.challengeId,
-      code: input.fields.otp,
-      now: input.now,
-    });
 
     let processedImages;
     try {
@@ -107,13 +107,11 @@ export class FeedbackService {
     }
 
     try {
-      const result = await this.dependencies.feedback.createWithUserAndConsumeOtp({
+      const result = await this.dependencies.feedback.create({
         id: feedbackId,
         submissionKey: input.fields.submissionKey,
-        userId: crypto.randomUUID(),
-        phoneHash,
-        phoneEncrypted: await this.dependencies.phoneCrypto.encrypt(input.fields.phone, phoneHash),
         nickname: input.fields.nickname,
+        beijingDay: day,
         topic: input.fields.topic,
         customTopic: input.fields.topic === "other" ? input.fields.customTopic : null,
         content: input.fields.content,
@@ -121,7 +119,6 @@ export class FeedbackService {
         privacyAgreedAt: input.now,
         livestreamPolicyVersion: this.dependencies.livestreamPolicyVersion,
         livestreamAgreedAt: input.now,
-        challengeId: input.fields.challengeId,
         images: imageRecords.map(({ data: _data, ...image }) => image),
         now: input.now,
       });
@@ -134,10 +131,12 @@ export class FeedbackService {
           idempotent: result.status === "idempotent",
         };
       }
-      if (result.status === "nickname_mismatch") {
-        throw new PublicError(409, "NICKNAME_MISMATCH", "此手机号已绑定其他抖音昵称，请检查后重试");
+      if (result.status === "daily_limit") {
+        throw new PublicError(429, "RATE_LIMITED", "今天的留言次数已达上限，请明天再来。", {
+          retryAfterSeconds: secondsUntilNextBeijingDay(input.now),
+        });
       }
-      throw new PublicError(409, "OTP_INVALID", "验证码已使用，请重新获取");
+      throw new DatabaseOutcomeUnknownError();
     } catch (error) {
       await this.cleanup(uploadedKeys, input.now, error instanceof DatabaseOutcomeUnknownError);
       if (error instanceof PublicError) throw error;
@@ -149,36 +148,11 @@ export class FeedbackService {
   }
 
   async history(input: {
-    phone: string;
     nickname: string;
-    remoteIp: string | null;
-    now: number;
   }): Promise<HistorySuccess> {
-    const phoneHash = await this.dependencies.phoneCrypto.hash(input.phone);
-    const [phoneLimit, ipLimit] = await Promise.all([
-      this.dependencies.rateLimits.consume({
-        operation: "history-phone",
-        identity: phoneHash,
-        limit: 30,
-        windowSeconds: 3600,
-        now: input.now,
-      }),
-      this.dependencies.rateLimits.consume({
-        operation: "history-ip",
-        identity: input.remoteIp ?? "unknown",
-        limit: 60,
-        windowSeconds: 3600,
-        now: input.now,
-      }),
-    ]);
-    if (!phoneLimit.allowed || !ipLimit.allowed) {
-      throw new PublicError(429, "RATE_LIMITED", "查询较频繁，请稍后再试", {
-        retryAfterSeconds: Math.max(phoneLimit.retryAfterSeconds, ipLimit.retryAfterSeconds),
-      });
-    }
-    const items = await this.dependencies.feedback.findHistory(phoneHash, input.nickname);
+    const items = await this.dependencies.feedback.findHistory(input.nickname);
     if (!items) {
-      throw new PublicError(404, "HISTORY_NOT_FOUND", "未找到匹配的留言记录，请检查手机号和抖音昵称");
+      throw new PublicError(404, "HISTORY_NOT_FOUND", "未找到匹配的留言记录，请检查抖音昵称");
     }
     return { ok: true, items };
   }

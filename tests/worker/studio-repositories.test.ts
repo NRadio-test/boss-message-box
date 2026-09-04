@@ -21,16 +21,18 @@ async function seedFeedback(input: {
   id: string;
   createdAt: number;
   isTodo?: boolean;
+  moderationStatus?: "pending" | "kept" | "filtered" | "failed";
   topic?: "released_hardware" | "released_software" | "unreleased_product" | "appeal" | "other";
 }): Promise<void> {
   await env.BOSS_MESSAGE_DB
     .prepare(
       `INSERT INTO feedback
-        (id, submission_key, user_id, topic, custom_topic, content, internal_status,
+        (id, submission_key, user_id, douyin_nickname, topic, custom_topic, content, internal_status,
          reply_type, reply_content, privacy_policy_version, privacy_agreed_at,
-         livestream_policy_version, livestream_agreed_at, created_at, updated_at, is_todo)
-       VALUES (?, ?, ?, ?, NULL, ?, 'unprocessed', NULL, NULL,
-               'v1', ?, 'v1', ?, ?, ?, ?)`,
+         livestream_policy_version, livestream_agreed_at, moderation_status,
+         created_at, updated_at, is_todo)
+       VALUES (?, ?, ?, '测试昵称', ?, NULL, ?, 'unprocessed', NULL, NULL,
+               'v1', ?, 'v1', ?, ?, ?, ?, ?)`,
     )
     .bind(
       input.id,
@@ -40,6 +42,7 @@ async function seedFeedback(input: {
       `留言 ${input.id}`,
       input.createdAt,
       input.createdAt,
+      input.moderationStatus ?? "kept",
       input.createdAt,
       input.createdAt,
       input.isTodo ? 1 : 0,
@@ -89,6 +92,7 @@ describe("D1 Studio repository", () => {
     await seedFeedback({ id: "10000002-feedback", createdAt: 1_002 });
     await seedFeedback({ id: "10000003-feedback", createdAt: 1_003 });
     await seedFeedback({ id: "10000004-feedback", createdAt: 1_004, isTodo: true });
+    await seedFeedback({ id: "10000005-feedback", createdAt: 1_005, isTodo: true, moderationStatus: "filtered" });
     await seedReply({
       id: "both-live",
       feedbackId: "10000001-feedback",
@@ -137,6 +141,15 @@ describe("D1 Studio repository", () => {
       "10000003-feedback",
       "10000001-feedback",
     ]);
+    expect((await repository.listFeedbacks({ view: "filtered", topic: null, page: 1, snapshot: null })).items.map((item) => item.id)).toEqual([
+      "10000005-feedback",
+    ]);
+    await seedFeedback({ id: "10000006-feedback", createdAt: 1_006 });
+    expect(await repository.findNextFeedback({
+      currentFeedbackId: "10000006-feedback",
+      view: "unreplied",
+      topic: null,
+    })).toBe("10000004-feedback");
     expect((await repository.getFeedbackSummary("10000001-feedback"))).toMatchObject({
       status: "replied",
       replyCount: 2,

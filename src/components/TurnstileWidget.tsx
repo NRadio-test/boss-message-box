@@ -30,8 +30,8 @@ export interface TurnstileHandle {
   reset(): void;
 }
 
-export const TurnstileWidget = forwardRef<TurnstileHandle, { siteKey: string }>(
-  function TurnstileWidget({ siteKey }, forwardedRef) {
+export const TurnstileWidget = forwardRef<TurnstileHandle, { siteKey: string; action?: string }>(
+  function TurnstileWidget({ siteKey, action = "feedback_submit" }, forwardedRef) {
     const containerRef = useRef<HTMLDivElement>(null);
     const widgetId = useRef<string | null>(null);
     const token = useRef<string | null>(null);
@@ -67,7 +67,7 @@ export const TurnstileWidget = forwardRef<TurnstileHandle, { siteKey: string }>(
       if (!ready || !window.turnstile || !containerRef.current || widgetId.current) return;
       widgetId.current = window.turnstile.render(containerRef.current, {
         sitekey: siteKey,
-        action: "request_otp",
+        action,
         theme: "dark",
         appearance: "interaction-only",
         execution: "execute",
@@ -88,7 +88,7 @@ export const TurnstileWidget = forwardRef<TurnstileHandle, { siteKey: string }>(
         if (widgetId.current && window.turnstile) window.turnstile.remove(widgetId.current);
         widgetId.current = null;
       };
-    }, [ready, siteKey]);
+    }, [action, ready, siteKey]);
 
     useImperativeHandle(forwardedRef, () => ({
       getToken: () => {

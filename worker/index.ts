@@ -20,11 +20,13 @@ import {
   D1UserRepository,
 } from "./infra/d1-repositories";
 import { R2ImageStorage } from "./infra/r2-image-storage";
+import { createAiModerationProvider } from "./providers/ai-moderation";
 import { createSmsProvider, resolveDevelopmentOtpCode } from "./providers/sms";
 import { CloudflareTurnstileVerifier } from "./providers/turnstile";
 import { studioRoutes } from "./routes/studio";
 import { WebCryptoPhoneService } from "./security/crypto";
 import { FeedbackService } from "./services/feedback-service";
+import { AiModerationService } from "./services/ai-moderation-service";
 import { ImageCleanupService } from "./services/image-cleanup-service";
 import { OtpService } from "./services/otp-service";
 
@@ -47,11 +49,10 @@ function remoteIp(request: Request): string | null {
   return request.headers.get("CF-Connecting-IP");
 }
 
-function createServices(env: Env): { otp: OtpService; feedback: FeedbackService; rateLimits: D1RateLimitService } {
+function createOtpServices(env: Env): { otp: OtpService; rateLimits: D1RateLimitService } {
   const users = new D1UserRepository(env.BOSS_MESSAGE_DB);
   const otpRepository = new D1OtpRepository(env.BOSS_MESSAGE_DB);
   const rateLimits = new D1RateLimitService(env.BOSS_MESSAGE_DB, env.RATE_LIMIT_HMAC_KEY);
-  const imageCleanup = new D1ImageCleanupRepository(env.BOSS_MESSAGE_DB);
   const phoneCrypto = new WebCryptoPhoneService(env.PHONE_HASH_KEY, env.PHONE_ENCRYPTION_KEY);
   const otp = new OtpService({
     users,
@@ -67,20 +68,35 @@ function createServices(env: Env): { otp: OtpService; feedback: FeedbackService;
     otpHmacKey: env.OTP_HMAC_KEY,
     fixedDevelopmentCode: resolveDevelopmentOtpCode(env),
   });
+  return { otp, rateLimits };
+}
+
+function createFeedbackServices(env: Env): {
+  feedback: FeedbackService;
+  moderation: AiModerationService;
+} {
+  const repository = new D1FeedbackRepository(env.BOSS_MESSAGE_DB);
   return {
-    otp,
-    rateLimits,
     feedback: new FeedbackService({
-      feedback: new D1FeedbackRepository(env.BOSS_MESSAGE_DB),
-      imageCleanup,
-      users,
+      feedback: repository,
+      imageCleanup: new D1ImageCleanupRepository(env.BOSS_MESSAGE_DB),
       images: new R2ImageStorage(env.BOSS_MESSAGE_IMAGES),
       imageProcessor: new CloudflareImageProcessor(env.IMAGES),
-      phoneCrypto,
-      rateLimits,
-      otp,
+      turnstile: new CloudflareTurnstileVerifier(
+        env.TURNSTILE_SECRET_KEY,
+        new Set((env.TURNSTILE_EXPECTED_HOSTNAMES ?? "").split(",").map((value) => value.trim()).filter(Boolean)),
+        env.APP_ENV !== "production",
+      ),
       privacyPolicyVersion: env.PRIVACY_POLICY_VERSION,
       livestreamPolicyVersion: env.LIVESTREAM_POLICY_VERSION,
+    }),
+    moderation: new AiModerationService({
+      feedback: repository,
+      provider: createAiModerationProvider({
+        baseUrl: env.AI_BASE_URL,
+        apiKey: env.AI_API_KEY,
+        model: env.AI_MODEL,
+      }),
     }),
   };
 }
@@ -102,7 +118,7 @@ app.post("/api/otp/request", async (context) => {
       fieldErrors: fieldErrors(parsed.error),
     });
   }
-  const { otp, rateLimits } = createServices(context.env);
+  const { otp, rateLimits } = createOtpServices(context.env);
   const now = Date.now();
   context.executionCtx.waitUntil(rateLimits.deleteExpired(now));
   return context.json(
@@ -134,25 +150,36 @@ app.post("/api/feedback", async (context) => {
   const imageFiles = (formData?.getAll("images") ?? []).filter(
     (value): value is File => value instanceof File,
   );
-  const { feedback, rateLimits } = createServices(context.env);
+  const { feedback, moderation } = createFeedbackServices(context.env);
   const now = Date.now();
-  context.executionCtx.waitUntil(rateLimits.deleteExpired(now));
-  return context.json(await feedback.submit({ fields: parsed.data, imageFiles, now }));
+  const result = await feedback.submit({
+    fields: parsed.data,
+    imageFiles,
+    remoteIp: remoteIp(context.req.raw),
+    now,
+  });
+  if (!result.idempotent) {
+    context.executionCtx.waitUntil(
+      moderation.moderate({
+        feedbackId: result.feedbackId,
+        topic: parsed.data.topic === "other" ? parsed.data.customTopic ?? "其他" : parsed.data.topic,
+        content: parsed.data.content,
+        now: Date.now(),
+      }),
+    );
+  }
+  return context.json(result);
 });
 
 app.post("/api/history", async (context) => {
   const parsed = historyQuerySchema.safeParse(await context.req.json().catch(() => null));
   if (!parsed.success) {
-    throw new PublicError(400, "VALIDATION_ERROR", "请检查手机号和抖音昵称", {
+    throw new PublicError(400, "VALIDATION_ERROR", "请检查抖音昵称", {
       fieldErrors: fieldErrors(parsed.error),
     });
   }
-  const { feedback, rateLimits } = createServices(context.env);
-  const now = Date.now();
-  context.executionCtx.waitUntil(rateLimits.deleteExpired(now));
-  return context.json(
-    await feedback.history({ ...parsed.data, remoteIp: remoteIp(context.req.raw), now }),
-  );
+  const { feedback } = createFeedbackServices(context.env);
+  return context.json(await feedback.history(parsed.data));
 });
 
 app.route("/api/studio", studioRoutes);

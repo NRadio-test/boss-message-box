@@ -41,7 +41,6 @@ export const feedbackFieldsSchema = z
       .min(1, "请填写留言内容")
       .max(2000, "留言内容不能超过 2000 个字符"),
     nickname: nicknameSchema,
-    phone: phoneSchema,
     privacyAgreed: z.literal(true, { message: "请阅读并同意隐私政策" }),
     livestreamAgreed: z.literal(true, { message: "请确认直播公开展示说明" }),
   })
@@ -68,15 +67,11 @@ export const otpRequestSchema = z.object({
   turnstileToken: z.string().min(1, "请先完成人机验证").max(2048),
 });
 
-export const feedbackSubmissionSchema = feedbackFieldsSchema.and(
-  z.object({
-    challengeId: z.string().uuid("验证码会话无效"),
-    otp: z.string().regex(/^\d{6}$/, "请输入 6 位数字验证码"),
-  }),
-);
+export const feedbackSubmissionSchema = feedbackFieldsSchema.and(z.object({
+  turnstileToken: z.string().min(1, "请先完成人机验证").max(2048),
+}));
 
 export const historyQuerySchema = z.object({
-  phone: phoneSchema,
   nickname: nicknameSchema,
 });
 
@@ -150,7 +145,7 @@ export interface PublicFeedback {
   customTopic: string | null;
   content: string;
   imageCount: number;
-  status: "unreplied" | "replied";
+  status: "unreplied" | "replied" | "filtered";
   replies: PublicReply[];
   /** @deprecated Use replies. Kept for a compatible public API transition. */
   replyContent: string | null;

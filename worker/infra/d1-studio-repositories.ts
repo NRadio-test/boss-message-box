@@ -22,7 +22,7 @@ import type {
 
 interface SummaryRow {
   id: string;
-  user_id: string;
+  user_id: string | null;
   douyin_nickname: string;
   topic: Topic;
   custom_topic: string | null;
@@ -32,11 +32,15 @@ interface SummaryRow {
   image_count: number;
   reply_count: number;
   latest_reply_admin: string | null;
+  moderation_status: "pending" | "kept" | "filtered" | "failed";
+  moderation_category: "valid_feedback" | "abusive" | "meaningless" | "uncertain" | null;
+  moderation_reason: string | null;
 }
 
 const SUMMARY_SELECT = `
-  SELECT f.id, f.user_id, u.douyin_nickname, f.topic, f.custom_topic, f.content,
-         f.created_at, f.is_todo,
+  SELECT f.id, f.user_id, COALESCE(f.douyin_nickname, u.douyin_nickname) AS douyin_nickname,
+         f.topic, f.custom_topic, f.content, f.created_at, f.is_todo,
+         f.moderation_status, f.moderation_category, f.moderation_reason,
          (SELECT COUNT(*) FROM feedback_images image WHERE image.feedback_id = f.id) AS image_count,
          (SELECT COUNT(*) FROM feedback_replies reply WHERE reply.feedback_id = f.id) AS reply_count,
          (SELECT admin.username
@@ -46,7 +50,7 @@ const SUMMARY_SELECT = `
            ORDER BY latest.created_at DESC, latest.id DESC
            LIMIT 1) AS latest_reply_admin
     FROM feedback f
-    JOIN users u ON u.id = f.user_id`;
+    LEFT JOIN users u ON u.id = f.user_id`;
 
 function feedbackNumber(id: string): string {
   return id.slice(0, 8).toUpperCase();
@@ -54,6 +58,7 @@ function feedbackNumber(id: string): string {
 
 function mapSummary(row: SummaryRow): StudioFeedbackSummary {
   const replyCount = Number(row.reply_count);
+  const filtered = row.moderation_status === "filtered";
   return {
     id: row.id,
     feedbackNumber: feedbackNumber(row.id),
@@ -64,25 +69,31 @@ function mapSummary(row: SummaryRow): StudioFeedbackSummary {
     contentPreview: row.content.slice(0, 240),
     imageCount: Number(row.image_count),
     createdAt: row.created_at,
-    status: replyCount > 0 ? "replied" : "unreplied",
-    isTodo: Boolean(row.is_todo) && replyCount === 0,
+    status: filtered ? "filtered" : replyCount > 0 ? "replied" : "unreplied",
+    isTodo: !filtered && Boolean(row.is_todo) && replyCount === 0,
     replyCount,
     latestReplyAdmin: row.latest_reply_admin,
+    moderationStatus: row.moderation_status,
+    moderationCategory: row.moderation_category,
+    moderationReason: row.moderation_reason,
   };
 }
 
 function viewFilter(view: StudioListInput["view"]): string {
+  const normal = "f.moderation_status <> 'filtered'";
   switch (view) {
     case "unreplied":
-      return "NOT EXISTS (SELECT 1 FROM feedback_replies reply WHERE reply.feedback_id = f.id)";
+      return `${normal} AND NOT EXISTS (SELECT 1 FROM feedback_replies reply WHERE reply.feedback_id = f.id)`;
     case "replied":
-      return "EXISTS (SELECT 1 FROM feedback_replies reply WHERE reply.feedback_id = f.id)";
+      return `${normal} AND EXISTS (SELECT 1 FROM feedback_replies reply WHERE reply.feedback_id = f.id)`;
     case "live":
-      return "EXISTS (SELECT 1 FROM feedback_replies reply WHERE reply.feedback_id = f.id AND reply.reply_type = 'live')";
+      return `${normal} AND EXISTS (SELECT 1 FROM feedback_replies reply WHERE reply.feedback_id = f.id AND reply.reply_type = 'live')`;
     case "message":
-      return "EXISTS (SELECT 1 FROM feedback_replies reply WHERE reply.feedback_id = f.id AND reply.reply_type = 'message')";
+      return `${normal} AND EXISTS (SELECT 1 FROM feedback_replies reply WHERE reply.feedback_id = f.id AND reply.reply_type = 'message')`;
     case "todo":
-      return "f.is_todo = 1 AND NOT EXISTS (SELECT 1 FROM feedback_replies reply WHERE reply.feedback_id = f.id)";
+      return `${normal} AND f.is_todo = 1 AND NOT EXISTS (SELECT 1 FROM feedback_replies reply WHERE reply.feedback_id = f.id)`;
+    case "filtered":
+      return "f.moderation_status = 'filtered'";
   }
 }
 
@@ -203,7 +214,7 @@ export class D1StudioRepository implements StudioRepository {
       );
     }
     return this.listWithFilter(
-      "u.douyin_nickname LIKE ? ESCAPE '\\'",
+      "COALESCE(f.douyin_nickname, u.douyin_nickname) LIKE ? ESCAPE '\\'",
       [`%${escapeLike(input.queryValue)}%`],
       input.page,
       input.snapshot,
@@ -259,7 +270,7 @@ export class D1StudioRepository implements StudioRepository {
     return {
       ...mapSummary(row),
       content: row.content,
-      maskedPhone: "1**********",
+      maskedPhone: row.user_id ? "1**********" : null,
       images,
       replies,
     };
@@ -320,6 +331,7 @@ export class D1StudioRepository implements StudioRepository {
     const sql = input.isTodo
       ? `UPDATE feedback SET is_todo = 1, updated_at = ?
            WHERE id = ? AND is_todo = 0
+             AND moderation_status <> 'filtered'
              AND NOT EXISTS (SELECT 1 FROM feedback_replies reply WHERE reply.feedback_id = feedback.id)`
       : "UPDATE feedback SET is_todo = 0, updated_at = ? WHERE id = ? AND is_todo = 1";
     const result = await this.db.prepare(sql).bind(input.now, input.feedbackId).run();
@@ -399,11 +411,13 @@ export class D1StudioRepository implements StudioRepository {
       this.db.prepare("SELECT COUNT(*) AS count FROM feedback WHERE created_at >= ?").bind(todayStartedAt),
       this.db.prepare(
         `SELECT COUNT(*) AS count FROM feedback f
-          WHERE NOT EXISTS (SELECT 1 FROM feedback_replies reply WHERE reply.feedback_id = f.id)`,
+          WHERE f.moderation_status <> 'filtered'
+            AND NOT EXISTS (SELECT 1 FROM feedback_replies reply WHERE reply.feedback_id = f.id)`,
       ),
       this.db.prepare(
-        `SELECT COUNT(*) AS count FROM feedback f
+         `SELECT COUNT(*) AS count FROM feedback f
           WHERE f.is_todo = 1
+            AND f.moderation_status <> 'filtered'
             AND NOT EXISTS (SELECT 1 FROM feedback_replies reply WHERE reply.feedback_id = f.id)`,
       ),
       this.db
@@ -433,7 +447,8 @@ export class D1StudioRepository implements StudioRepository {
     const row = await this.db
       .prepare(
         `SELECT COUNT(*) AS count FROM feedback
-          WHERE (created_at > ? OR (created_at = ? AND id > ?))${topicFilter}`,
+          WHERE moderation_status <> 'filtered'
+            AND (created_at > ? OR (created_at = ? AND id > ?))${topicFilter}`,
       )
       .bind(after.createdAt, after.createdAt, after.id, ...(topic ? [topic] : []))
       .first<{ count: number }>();
@@ -466,6 +481,78 @@ export class D1StudioRepository implements StudioRepository {
     return row ? mapSummary(row) : null;
   }
 
+  async setModeration(input: {
+    feedbackId: string;
+    filtered: boolean;
+    adminId: string;
+    now: number;
+  }): Promise<{ moderationStatus: "filtered" | "kept"; isTodo: false } | null> {
+    if (!(await this.feedbackExists(input.feedbackId))) return null;
+    const status = input.filtered ? "filtered" : "kept";
+    const results = await this.db.batch([
+      this.db
+        .prepare(
+          `UPDATE feedback
+           SET moderation_status = ?, moderation_source = 'manual',
+               moderation_category = NULL, moderation_reason = ?, moderated_at = ?,
+               is_todo = 0, updated_at = ?
+           WHERE id = ?`,
+        )
+        .bind(
+          status,
+          input.filtered ? "manual_filter" : "manual_restore",
+          input.now,
+          input.now,
+          input.feedbackId,
+        ),
+      this.db
+        .prepare(
+          `INSERT INTO audit_logs (id, admin_id, feedback_id, action, created_at)
+           VALUES (?, ?, ?, ?, ?)`,
+        )
+        .bind(
+          crypto.randomUUID(),
+          input.adminId,
+          input.feedbackId,
+          input.filtered ? "moderation_filtered" : "moderation_restored",
+          input.now,
+        ),
+    ]);
+    return results[0]?.meta.changes === 1
+      ? { moderationStatus: status, isTodo: false }
+      : null;
+  }
+
+  async findNextFeedback(input: {
+    currentFeedbackId: string;
+    view: "unreplied" | "todo";
+    topic: Topic | null;
+  }): Promise<string | null> {
+    const current = await this.db
+      .prepare("SELECT created_at, id FROM feedback WHERE id = ? LIMIT 1")
+      .bind(input.currentFeedbackId)
+      .first<{ created_at: number; id: string }>();
+    if (!current) return null;
+    const filter = viewFilter(input.view);
+    const topicFilter = input.topic ? " AND f.topic = ?" : "";
+    const row = await this.db
+      .prepare(
+        `SELECT f.id FROM feedback f
+         WHERE (${filter})${topicFilter}
+           AND (f.created_at < ? OR (f.created_at = ? AND f.id < ?))
+         ORDER BY f.created_at DESC, f.id DESC
+         LIMIT 1`,
+      )
+      .bind(
+        ...(input.topic ? [input.topic] : []),
+        current.created_at,
+        current.created_at,
+        current.id,
+      )
+      .first<{ id: string }>();
+    return row?.id ?? null;
+  }
+
   private async listWithFilter(
     filter: string,
     filterBindings: unknown[],
@@ -485,7 +572,7 @@ export class D1StudioRepository implements StudioRepository {
     const bindings = [...filterBindings, snapshot.createdAt, snapshot.createdAt, snapshot.id];
     const where = `(${filter}) AND ${snapshotFilter}`;
     const countRow = await this.db
-      .prepare(`SELECT COUNT(*) AS count FROM feedback f JOIN users u ON u.id = f.user_id WHERE ${where}`)
+      .prepare(`SELECT COUNT(*) AS count FROM feedback f LEFT JOIN users u ON u.id = f.user_id WHERE ${where}`)
       .bind(...bindings)
       .first<{ count: number }>();
     const total = Number(countRow?.count ?? 0);

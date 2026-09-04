@@ -39,6 +39,7 @@ export function StudioApp() {
             <Route path="replied/all" element={<FeedbackListPage view="replied" />} />
             <Route path="replied/live" element={<FeedbackListPage view="live" />} />
             <Route path="replied/message" element={<FeedbackListPage view="message" />} />
+            <Route path="filtered" element={<FeedbackListPage view="filtered" />} />
             <Route path="todo" element={<FeedbackListPage view="todo" />} />
             <Route path="search" element={<SearchPage />} />
             <Route path="feedback/:feedbackId" element={<FeedbackDetailPage />} />

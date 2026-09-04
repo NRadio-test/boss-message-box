@@ -2,6 +2,7 @@ import { BookmarkSimple, ChatCircleText, Clock, ImageSquare, UserCircle } from "
 import { Link } from "react-router-dom";
 import { TOPIC_LABELS } from "../../../shared/contracts";
 import type { StudioFeedbackSummary } from "../../../shared/studio-contracts";
+import type { Topic } from "../../../shared/contracts";
 import type { StudioReturnContext } from "../navigation-context";
 
 function formatDate(timestamp: number): string {
@@ -21,6 +22,7 @@ interface FeedbackCardProps {
   showTodoAction?: boolean;
   todoBusy?: boolean;
   onTodoChange: (item: StudioFeedbackSummary) => void;
+  liveContext?: { view: "unreplied" | "todo"; topic: Topic | null };
 }
 
 export function FeedbackCard({
@@ -30,8 +32,15 @@ export function FeedbackCard({
   showTodoAction = true,
   todoBusy = false,
   onTodoChange,
+  liveContext,
 }: FeedbackCardProps) {
-  const detailUrl = `/studio/feedback/${encodeURIComponent(item.id)}${liveMode ? "?mode=live" : ""}`;
+  const detailQuery = new URLSearchParams();
+  if (liveMode) detailQuery.set("mode", "live");
+  if (liveMode && liveContext) {
+    detailQuery.set("view", liveContext.view);
+    if (liveContext.topic) detailQuery.set("topic", liveContext.topic);
+  }
+  const detailUrl = `/studio/feedback/${encodeURIComponent(item.id)}${detailQuery.size ? `?${detailQuery}` : ""}`;
   const title = item.topic === "other" ? item.customTopic : TOPIC_LABELS[item.topic];
 
   return (
@@ -39,8 +48,11 @@ export function FeedbackCard({
       <Link className="studio-feedback-card-main" to={detailUrl} state={{ returnContext }}>
         <div className="studio-card-topline">
           <span className={`studio-status studio-status--${item.status}`}>
-            {item.status === "replied" ? "已回复" : "未回复"}
+            {item.status === "filtered" ? "已过滤" : item.status === "replied" ? "已回复" : "未回复"}
           </span>
+          {item.moderationStatus === "failed" && (
+            <span className="studio-moderation-failed">AI 筛选失败</span>
+          )}
           <code>#{item.feedbackNumber}</code>
         </div>
         <dl className="studio-card-fields">

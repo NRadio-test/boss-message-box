@@ -34,7 +34,9 @@
     "TURNSTILE_SITE_KEY": "0x4AAAAAAEliU6CJbO1itIy3",
     "TURNSTILE_EXPECTED_HOSTNAMES": "message.fallaxaura.com",
     "PRIVACY_POLICY_VERSION": "2026-09-03",
-    "LIVESTREAM_POLICY_VERSION": "2026-09-03"
+    "LIVESTREAM_POLICY_VERSION": "2026-09-03",
+    "AI_BASE_URL": "https://api.deepseek.com",
+    "AI_MODEL": "deepseek-v4-flash"
   },
   "observability": {
     "enabled": true,

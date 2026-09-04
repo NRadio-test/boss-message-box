@@ -241,60 +241,56 @@ export class D1FeedbackRepository implements FeedbackRepository {
 
   async findIdempotent(
     submissionKey: string,
-    phoneHash: string,
   ): Promise<{ feedbackId: string; createdAt: number } | null> {
     const row = await this.db
       .prepare(
-        `SELECT f.id, f.created_at FROM feedback f
-         JOIN users u ON u.id = f.user_id
-         WHERE f.submission_key = ? AND u.phone_hash = ? LIMIT 1`,
+        "SELECT id, created_at FROM feedback WHERE submission_key = ? LIMIT 1",
       )
-      .bind(submissionKey, phoneHash)
+      .bind(submissionKey)
       .first<{ id: string; created_at: number }>();
     return row ? { feedbackId: row.id, createdAt: row.created_at } : null;
   }
 
-  async createWithUserAndConsumeOtp(input: CreateFeedbackInput): Promise<CreateFeedbackResult> {
-    const existing = await this.findIdempotent(input.submissionKey, input.phoneHash);
+  async hasReachedDailyLimit(nickname: string, beijingDay: string): Promise<boolean> {
+    const row = await this.db
+      .prepare(
+        `SELECT submission_count FROM nickname_daily_limits
+         WHERE nickname = ? AND beijing_day = ? LIMIT 1`,
+      )
+      .bind(nickname, beijingDay)
+      .first<{ submission_count: number }>();
+    return Number(row?.submission_count ?? 0) >= 10;
+  }
+
+  async create(input: CreateFeedbackInput): Promise<CreateFeedbackResult> {
+    const existing = await this.findIdempotent(input.submissionKey);
     if (existing) return { status: "idempotent", ...existing };
 
-    const activeChallengeSql = `EXISTS (
-      SELECT 1 FROM otp_challenges c
-      WHERE c.id = ? AND c.phone_hash = ? AND c.consumed_at IS NULL
-        AND c.invalidated_at IS NULL AND c.expires_at >= ?
-    )`;
     try {
       const statements: D1PreparedStatement[] = [
         this.db
           .prepare(
-            `INSERT INTO users (id, phone_encrypted, phone_hash, douyin_nickname, created_at, updated_at)
-             SELECT ?, ?, ?, ?, ?, ? WHERE ${activeChallengeSql}
-             ON CONFLICT(phone_hash) DO NOTHING`,
+            `INSERT INTO nickname_daily_limits
+              (nickname, beijing_day, submission_count, updated_at)
+             VALUES (?, ?, 1, ?)
+             ON CONFLICT(nickname, beijing_day) DO UPDATE SET
+               submission_count = nickname_daily_limits.submission_count + 1,
+               updated_at = excluded.updated_at`,
           )
-          .bind(
-            input.userId,
-            input.phoneEncrypted,
-            input.phoneHash,
-            input.nickname,
-            input.now,
-            input.now,
-            input.challengeId,
-            input.phoneHash,
-            input.now,
-          ),
+          .bind(input.nickname, input.beijingDay, input.now),
         this.db
           .prepare(
             `INSERT INTO feedback
-              (id, submission_key, user_id, topic, custom_topic, content, internal_status,
+              (id, submission_key, user_id, douyin_nickname, topic, custom_topic, content, internal_status,
                reply_type, reply_content, privacy_policy_version, privacy_agreed_at,
-               livestream_policy_version, livestream_agreed_at, created_at, updated_at)
-             SELECT ?, ?, u.id, ?, ?, ?, 'unprocessed', NULL, NULL, ?, ?, ?, ?, ?, ?
-             FROM users u
-             WHERE u.phone_hash = ? AND u.douyin_nickname = ? AND ${activeChallengeSql}`,
+               livestream_policy_version, livestream_agreed_at, moderation_status,
+               created_at, updated_at)
+             VALUES (?, ?, NULL, ?, ?, ?, ?, 'unprocessed', NULL, NULL, ?, ?, ?, ?, 'pending', ?, ?)`,
           )
           .bind(
             input.id,
             input.submissionKey,
+            input.nickname,
             input.topic,
             input.customTopic,
             input.content,
@@ -303,11 +299,6 @@ export class D1FeedbackRepository implements FeedbackRepository {
             input.livestreamPolicyVersion,
             input.livestreamAgreedAt,
             input.now,
-            input.now,
-            input.phoneHash,
-            input.nickname,
-            input.challengeId,
-            input.phoneHash,
             input.now,
           ),
         ...input.images.map((image) =>
@@ -330,13 +321,6 @@ export class D1FeedbackRepository implements FeedbackRepository {
               input.id,
             ),
         ),
-        this.db
-          .prepare(
-            `UPDATE otp_challenges SET consumed_at = ?
-             WHERE id = ? AND phone_hash = ? AND consumed_at IS NULL
-               AND EXISTS (SELECT 1 FROM feedback WHERE id = ?)`,
-          )
-          .bind(input.now, input.challengeId, input.phoneHash, input.id),
       ];
       const results = await this.db.batch(statements);
       if (results[1]?.meta.changes === 1) {
@@ -344,40 +328,32 @@ export class D1FeedbackRepository implements FeedbackRepository {
       }
     } catch (error) {
       try {
-        const idempotent = await this.findIdempotent(input.submissionKey, input.phoneHash);
+        const idempotent = await this.findIdempotent(input.submissionKey);
         if (idempotent) return { status: "idempotent", ...idempotent };
+        if (await this.hasReachedDailyLimit(input.nickname, input.beijingDay)) {
+          return { status: "daily_limit" };
+        }
       } catch {
         throw new DatabaseOutcomeUnknownError();
       }
       throw error;
     }
-
-    const user = await this.db
-      .prepare("SELECT douyin_nickname FROM users WHERE phone_hash = ? LIMIT 1")
-      .bind(input.phoneHash)
-      .first<{ douyin_nickname: string }>();
-    if (user && user.douyin_nickname !== input.nickname) return { status: "nickname_mismatch" };
-    return { status: "otp_consumed" };
+    throw new DatabaseOutcomeUnknownError();
   }
 
-  async findHistory(phoneHash: string, nickname: string): Promise<PublicFeedback[] | null> {
-    const user = await this.db
-      .prepare("SELECT id FROM users WHERE phone_hash = ? AND douyin_nickname = ? LIMIT 1")
-      .bind(phoneHash, nickname)
-      .first<{ id: string }>();
-    if (!user) return null;
-
+  async findHistory(nickname: string): Promise<PublicFeedback[] | null> {
     const rows = await this.db
       .prepare(
         `SELECT f.id, f.topic, f.custom_topic, f.content, f.internal_status, f.reply_type,
-                f.reply_content, f.created_at, f.updated_at, COUNT(i.id) AS image_count
+                f.reply_content, f.moderation_status, f.created_at, f.updated_at,
+                COUNT(i.id) AS image_count
          FROM feedback f
          LEFT JOIN feedback_images i ON i.feedback_id = f.id
-         WHERE f.user_id = ?
+         WHERE f.douyin_nickname = ?
          GROUP BY f.id
-         ORDER BY f.created_at DESC`,
+         ORDER BY f.created_at DESC, f.id DESC`,
       )
-      .bind(user.id)
+      .bind(nickname)
       .all<{
         id: string;
         topic: Topic;
@@ -389,6 +365,7 @@ export class D1FeedbackRepository implements FeedbackRepository {
         created_at: number;
         updated_at: number;
         image_count: number;
+        moderation_status?: "pending" | "kept" | "filtered" | "failed";
       }>();
     if (rows.results.length === 0) return null;
     const replyRows = await this.db
@@ -396,10 +373,10 @@ export class D1FeedbackRepository implements FeedbackRepository {
         `SELECT reply.id, reply.feedback_id, reply.reply_type, reply.content, reply.created_at
            FROM feedback_replies reply
            JOIN feedback f ON f.id = reply.feedback_id
-          WHERE f.user_id = ?
+          WHERE f.douyin_nickname = ?
           ORDER BY reply.created_at ASC, reply.id ASC`,
       )
-      .bind(user.id)
+      .bind(nickname)
       .all<{
         id: string;
         feedback_id: string;
@@ -433,18 +410,47 @@ export class D1FeedbackRepository implements FeedbackRepository {
         }];
       }
       const replied = replies.length > 0;
+      const filtered = row.moderation_status === "filtered";
       return {
         id: row.id,
         topic: row.topic,
         customTopic: row.custom_topic,
         content: row.content,
         imageCount: Number(row.image_count),
-        status: replied ? "replied" : "unreplied",
+        status: filtered ? "filtered" : replied ? "replied" : "unreplied",
         replies,
         replyContent: replied ? replies.at(-1)?.content ?? null : null,
         createdAt: row.created_at,
       };
     });
+  }
+
+  async setModerationResult(input: {
+    feedbackId: string;
+    status: "kept" | "filtered" | "failed";
+    category: "valid_feedback" | "abusive" | "meaningless" | "uncertain" | null;
+    reason: string | null;
+    now: number;
+  }): Promise<void> {
+    await this.db
+      .prepare(
+        `UPDATE feedback
+         SET moderation_status = ?, moderation_source = 'ai', moderation_category = ?,
+             moderation_reason = ?, moderated_at = ?,
+             is_todo = CASE WHEN ? = 'filtered' THEN 0 ELSE is_todo END,
+             updated_at = ?
+         WHERE id = ? AND moderation_status = 'pending' AND moderation_source IS NULL`,
+      )
+      .bind(
+        input.status,
+        input.category,
+        input.reason?.slice(0, 160) ?? null,
+        input.now,
+        input.status,
+        input.now,
+        input.feedbackId,
+      )
+      .run();
   }
 }
 

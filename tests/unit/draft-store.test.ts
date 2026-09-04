@@ -18,14 +18,16 @@ describe("local draft storage", () => {
       ...EMPTY_DRAFT(),
       topic: "released_hardware" as const,
       content: "保留中的草稿",
-      phone: "13800138000",
+      nickname: "测试昵称",
+      imagesEnabled: true,
       privacyAgreed: true,
     };
     saveDraft(draft);
     expect(loadDraft()).toMatchObject({
       topic: "released_hardware",
       content: "保留中的草稿",
-      phone: "13800138000",
+      nickname: "测试昵称",
+      imagesEnabled: true,
       privacyAgreed: true,
     });
   });

@@ -11,7 +11,7 @@ import { useNavigate } from "react-router-dom";
 import { Button } from "../../components/Button";
 import { FormField } from "../../components/FormField";
 import { TurnstileWidget, type TurnstileHandle } from "../../components/TurnstileWidget";
-import { ApiClientError, requestOtp, submitFeedback } from "../../lib/api";
+import { ApiClientError, submitFeedback } from "../../lib/api";
 import { createRandomUuid } from "../../lib/random-id";
 import {
   feedbackFieldsSchema,
@@ -24,29 +24,20 @@ import { PolicyDialog } from "../privacy/PolicyDialog";
 import {
   clearDraftFields,
   clearDraftImages,
-  clearOtpSession,
   deleteDraftImage,
   EMPTY_DRAFT,
   loadDraft,
   loadDraftImages,
-  loadOtpSession,
   saveDraft,
   saveDraftImage,
   saveIdentity,
-  saveOtpSession,
   type DraftImage,
   type DraftState,
-  type OtpSession,
 } from "./draft-store";
 import { compressImage } from "./image-compression";
-import { OtpDialog } from "./OtpDialog";
 
 interface LocalImage extends DraftImage {
   previewUrl: string;
-}
-
-function currentTimestamp(): number {
-  return Date.now();
 }
 
 function draftHasContent(draft: DraftState): boolean {
@@ -54,7 +45,7 @@ function draftHasContent(draft: DraftState): boolean {
     draft.topic ||
       draft.content ||
       draft.nickname ||
-      draft.phone ||
+      draft.imagesEnabled ||
       draft.privacyAgreed ||
       draft.livestreamAgreed,
   );
@@ -77,11 +68,7 @@ export function FeedbackForm({ config }: { config: PublicConfig }) {
   const [formMessage, setFormMessage] = useState<string | null>(null);
   const [imageMessage, setImageMessage] = useState<string | null>(null);
   const [compressing, setCompressing] = useState(0);
-  const [requestingOtp, setRequestingOtp] = useState(false);
   const [submitting, setSubmitting] = useState(false);
-  const [otpOpen, setOtpOpen] = useState(false);
-  const [otpError, setOtpError] = useState<string | null>(null);
-  const [otpSession, setOtpSession] = useState<OtpSession | null>(loadOtpSession());
   const [policy, setPolicy] = useState<"privacy" | "livestream" | null>(null);
   const turnstileRef = useRef<TurnstileHandle>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -149,107 +136,33 @@ export function FeedbackForm({ config }: { config: PublicConfig }) {
     return result.data;
   };
 
-  const openVerification = async () => {
+  const submit = async () => {
     const fields = validatedFields();
     if (!fields) return;
-    const existing = loadOtpSession();
-    const existingNow = existing ? currentTimestamp() - existing.serverOffsetMs : 0;
-    if (
-      existing &&
-      existing.phone === fields.phone &&
-      existing.nickname === fields.nickname &&
-      existing.challengeId &&
-      existing.expiresAt > existingNow
-    ) {
-      setOtpSession(existing);
-      setOtpError(null);
-      setOtpOpen(true);
-      return;
-    }
-    await sendCode(fields);
-  };
-
-  const sendCode = async (fields = validatedFields()) => {
-    if (!fields) return;
-    setRequestingOtp(true);
-    setOtpError(null);
+    setSubmitting(true);
     setFormMessage(null);
     try {
       const turnstileToken = await turnstileRef.current!.getToken();
-      const result = await requestOtp({
-        phone: fields.phone,
-        nickname: fields.nickname,
-        turnstileToken,
-      });
-      const session: OtpSession = {
-        phone: fields.phone,
-        nickname: fields.nickname,
-        challengeId: result.challengeId,
-        maskedPhone: result.maskedPhone,
-        expiresAt: result.expiresAt,
-        cooldownEndsAt: result.cooldownEndsAt,
-        serverOffsetMs: Date.now() - result.serverNow,
-      };
-      saveOtpSession(session);
-      setOtpSession(session);
-      setOtpOpen(true);
-    } catch (error) {
-      if (error instanceof ApiClientError && error.body.error.code === "OTP_COOLDOWN") {
-        const retry = error.body.error.retryAfterSeconds ?? 120;
-        const previous = loadOtpSession();
-        const session: OtpSession = {
-          phone: fields.phone,
-          nickname: fields.nickname,
-          challengeId:
-            previous?.phone === fields.phone && previous.nickname === fields.nickname
-              ? previous.challengeId
-              : null,
-          maskedPhone: `${fields.phone.slice(0, 3)} **** ${fields.phone.slice(-4)}`,
-          expiresAt: previous?.expiresAt ?? 0,
-          cooldownEndsAt: Date.now() + retry * 1000,
-          serverOffsetMs: 0,
-        };
-        saveOtpSession(session);
-        setOtpSession(session);
-        setOtpError(error.message);
-        setOtpOpen(true);
-      } else {
-        const message = error instanceof Error ? error.message : "验证码发送失败，请稍后重试";
-        setFormMessage(message);
-      }
-    } finally {
-      turnstileRef.current?.reset();
-      setRequestingOtp(false);
-    }
-  };
-
-  const confirmSubmission = async (code: string) => {
-    const fields = validatedFields();
-    if (!fields || !otpSession?.challengeId) return;
-    setSubmitting(true);
-    setOtpError(null);
-    try {
       const result = await submitFeedback(
-        { ...fields, challengeId: otpSession.challengeId, otp: code },
-        images.map((image, index) =>
-          new File([image.blob], `image-${index + 1}.webp`, { type: "image/webp" }),
-        ),
+        { ...fields, turnstileToken },
+        draft.imagesEnabled
+          ? images.map((image, index) =>
+              new File([image.blob], "image-" + String(index + 1) + ".webp", { type: "image/webp" }),
+            )
+          : [],
       );
-      saveIdentity(fields.phone, fields.nickname);
+      saveIdentity(fields.nickname);
       clearDraftFields();
-      clearOtpSession();
       await clearDraftImages();
       images.forEach((image) => URL.revokeObjectURL(image.previewUrl));
-      setOtpOpen(false);
       navigate("/success", { replace: true, state: result });
     } catch (error) {
-      if (error instanceof ApiClientError) {
-        if (error.body.error.fieldErrors) setErrors(error.body.error.fieldErrors);
-        setOtpError(error.message);
-      } else {
-        setOtpError(error instanceof Error ? error.message : "提交失败，请稍后重试");
+      if (error instanceof ApiClientError && error.body.error.fieldErrors) {
+        setErrors(error.body.error.fieldErrors);
       }
+      setFormMessage(error instanceof Error ? error.message : "提交失败，请稍后重试");
     } finally {
+      turnstileRef.current?.reset();
       setSubmitting(false);
     }
   };
@@ -262,8 +175,7 @@ export function FeedbackForm({ config }: { config: PublicConfig }) {
       return;
     }
     const selected = Array.from(files).slice(0, available);
-    if (files.length > available) setImageMessage(`只添加了前 ${available} 张图片，每次最多 3 张`);
-    else setImageMessage(null);
+    setImageMessage(files.length > available ? "只添加了前 " + available + " 张图片，每次最多 3 张" : null);
     setCompressing(selected.length);
     const results = await Promise.all(
       selected.map(async (file) => {
@@ -283,7 +195,7 @@ export function FeedbackForm({ config }: { config: PublicConfig }) {
       const image: LocalImage = {
         id: createRandomUuid(),
         blob: result.value.blob,
-        name: `draft-${createRandomUuid()}.webp`,
+        name: "draft-" + createRandomUuid() + ".webp",
         width: result.value.width,
         height: result.value.height,
         byteSize: result.value.blob.size,
@@ -308,15 +220,27 @@ export function FeedbackForm({ config }: { config: PublicConfig }) {
     setImages((current) => current.filter((item) => item.id !== image.id));
   };
 
-  const startFresh = async () => {
+  const clearSelectedImages = async () => {
     images.forEach((image) => URL.revokeObjectURL(image.previewUrl));
     await clearDraftImages().catch(() => undefined);
-    clearDraftFields();
-    clearOtpSession();
     setImages([]);
+    setImageMessage(null);
+  };
+
+  const toggleImages = async (enabled: boolean) => {
+    if (!enabled && images.length > 0) {
+      const confirmed = window.confirm("关闭后会清除已经选择的图片，确定关闭吗？");
+      if (!confirmed) return;
+      await clearSelectedImages();
+    }
+    update("imagesEnabled", enabled);
+  };
+
+  const startFresh = async () => {
+    await clearSelectedImages();
+    clearDraftFields();
     setDraft(EMPTY_DRAFT());
     setRecovered(false);
-    setOtpSession(null);
     setErrors({});
     setFormMessage(null);
   };
@@ -333,11 +257,11 @@ export function FeedbackForm({ config }: { config: PublicConfig }) {
         <div className="recovery-banner" role="status">
           <CheckCircle aria-hidden="true" weight="fill" />
           <div><strong>已恢复上次未提交的内容</strong><span>文字和图片仍只保存在这台设备上</span></div>
-          <button type="button" onClick={startFresh}>重新填写</button>
+          <button type="button" onClick={() => void startFresh()}>重新填写</button>
         </div>
       )}
 
-      <form className="feedback-form" noValidate onSubmit={(event) => { event.preventDefault(); void openVerification(); }}>
+      <form className="feedback-form" noValidate onSubmit={(event) => { event.preventDefault(); void submit(); }}>
         <FormField index="01" label="留言主题" htmlFor="topic" required error={errors.topic}>
           <select
             id="topic"
@@ -387,54 +311,10 @@ export function FeedbackForm({ config }: { config: PublicConfig }) {
 
         <FormField
           index="03"
-          label="上传图片"
-          htmlFor="images"
-          helper="选填，最多 3 张。"
-          error={imageMessage ?? undefined}
-        >
-          <input
-            ref={fileInputRef}
-            className="sr-only"
-            id="images"
-            type="file"
-            accept="image/jpeg,image/png,image/webp"
-            multiple
-            onChange={(event) => void addImages(event.target.files)}
-          />
-          <button
-            type="button"
-            className="upload-button"
-            onClick={() => fileInputRef.current?.click()}
-            disabled={images.length >= 3 || compressing > 0}
-            aria-describedby={`images-helper${imageMessage ? " images-error" : ""}`}
-          >
-            <UploadSimple aria-hidden="true" weight="bold" />
-            <span>{compressing > 0 ? `正在处理 ${compressing} 张图片` : images.length >= 3 ? "已添加 3 张图片" : "选择图片"}</span>
-          </button>
-          {images.length > 0 && (
-            <ul className="image-list" aria-label="已选择的图片">
-              {images.map((image) => (
-                <li key={image.id}>
-                  <img src={image.previewUrl} alt="留言附件预览" width={image.width} height={image.height} />
-                  <div className="image-meta">
-                    <ImageSquare aria-hidden="true" />
-                    <span>{Math.max(1, Math.round(image.byteSize / 1024))} KB</span>
-                  </div>
-                  <button type="button" onClick={() => void removeImage(image)} aria-label="移除这张图片">
-                    <Trash aria-hidden="true" weight="bold" />
-                  </button>
-                </li>
-              ))}
-            </ul>
-          )}
-        </FormField>
-
-        <FormField
-          index="04"
           label="抖音昵称"
           htmlFor="nickname"
           required
-          helper="首次提交后将与手机号绑定，请填写准确"
+          helper="同一昵称每天最多成功提交 10 条留言"
           error={errors.nickname}
         >
           <input
@@ -443,31 +323,73 @@ export function FeedbackForm({ config }: { config: PublicConfig }) {
             value={draft.nickname}
             maxLength={40}
             autoComplete="nickname"
-            enterKeyHint="next"
+            enterKeyHint="done"
             placeholder="请输入你的抖音昵称"
             onChange={(event) => update("nickname", event.target.value)}
             aria-invalid={Boolean(errors.nickname)}
-            aria-describedby={`nickname-helper${errors.nickname ? " nickname-error" : ""}`}
+            aria-describedby={"nickname-helper" + (errors.nickname ? " nickname-error" : "")}
           />
         </FormField>
 
-        <FormField index="05" label="手机号" htmlFor="phone" required error={errors.phone}>
-          <div className="phone-input">
-            <span className="phone-prefix" aria-hidden="true">+86</span>
-            <input
-              id="phone"
-              required
-              type="tel"
-              inputMode="tel"
-              autoComplete="tel-national"
-              enterKeyHint="done"
-              value={draft.phone}
-              maxLength={13}
-              onChange={(event) => update("phone", event.target.value.replace(/[^\d\s-]/g, ""))}
-              aria-invalid={Boolean(errors.phone)}
-              aria-describedby={errors.phone ? "phone-error" : undefined}
-            />
+        <FormField index="04" label="上传图片" helper="选填，最多 3 张。" error={imageMessage ?? undefined}>
+          <div className="optional-upload-control">
+            <span>需要上传图片时再开启</span>
+            <label className="switch-control" htmlFor="images-enabled">
+              <span>{draft.imagesEnabled ? "已开启" : "未开启"}</span>
+              <input
+                id="images-enabled"
+                type="checkbox"
+                role="switch"
+                checked={draft.imagesEnabled}
+                onChange={(event) => void toggleImages(event.target.checked)}
+              />
+              <i aria-hidden="true" />
+            </label>
           </div>
+          {draft.imagesEnabled && (
+            <div className="optional-upload-panel">
+              <input
+                ref={fileInputRef}
+                className="sr-only"
+                id="images"
+                type="file"
+                accept="image/jpeg,image/png,image/webp"
+                multiple
+                onChange={(event) => void addImages(event.target.files)}
+              />
+              <button
+                type="button"
+                className="upload-button"
+                onClick={() => fileInputRef.current?.click()}
+                disabled={images.length >= 3 || compressing > 0}
+              >
+                <UploadSimple aria-hidden="true" weight="bold" />
+                <span>
+                  {compressing > 0
+                    ? "正在处理 " + compressing + " 张图片"
+                    : images.length >= 3
+                      ? "已添加 3 张图片"
+                      : "选择图片"}
+                </span>
+              </button>
+              {images.length > 0 && (
+                <ul className="image-list" aria-label="已选择的图片">
+                  {images.map((image) => (
+                    <li key={image.id}>
+                      <img src={image.previewUrl} alt="留言附件预览" width={image.width} height={image.height} />
+                      <div className="image-meta">
+                        <ImageSquare aria-hidden="true" />
+                        <span>{Math.max(1, Math.round(image.byteSize / 1024))} KB</span>
+                      </div>
+                      <button type="button" onClick={() => void removeImage(image)} aria-label="移除这张图片">
+                        <Trash aria-hidden="true" weight="bold" />
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+          )}
         </FormField>
 
         <div className="form-submit-zone">
@@ -497,7 +419,7 @@ export function FeedbackForm({ config }: { config: PublicConfig }) {
                 aria-invalid={Boolean(errors.livestreamAgreed)}
                 aria-describedby={errors.livestreamAgreed ? "livestream-agreed-error" : undefined}
               />
-              <div><label htmlFor="livestream-agreed">我知道抖音昵称、留言文字和提交内容可能在公司直播中</label><button type="button" onClick={() => setPolicy("livestream")}>公开展示和回复</button>，手机号不会公开</div>
+              <div><label htmlFor="livestream-agreed">我知道抖音昵称、留言文字和图片可能在公司直播中</label><button type="button" onClick={() => setPolicy("livestream")}>公开展示和回复</button></div>
               {errors.livestreamAgreed && <p id="livestream-agreed-error" className="field-error acknowledgement-error" role="alert">{errors.livestreamAgreed}</p>}
             </div>
           </fieldset>
@@ -505,8 +427,8 @@ export function FeedbackForm({ config }: { config: PublicConfig }) {
           <Button
             className="submit-button"
             type="submit"
-            loading={requestingOtp}
-            loadingLabel="正在发送验证码"
+            loading={submitting}
+            loadingLabel="正在提交"
             icon={<PaperPlaneTilt aria-hidden="true" weight="fill" />}
           >
             提交留言
@@ -523,18 +445,6 @@ export function FeedbackForm({ config }: { config: PublicConfig }) {
         version={policy === "livestream" ? config.livestreamPolicyVersion : config.privacyPolicyVersion}
         onClose={() => setPolicy(null)}
       />
-      {otpOpen && (
-        <OtpDialog
-          key={otpSession?.challengeId ?? "cooldown"}
-          open
-          session={otpSession}
-          loading={submitting || requestingOtp}
-          error={otpError}
-          onClose={() => setOtpOpen(false)}
-          onConfirm={(code) => void confirmSubmission(code)}
-          onResend={() => void sendCode()}
-        />
-      )}
     </div>
   );
 }

@@ -3,7 +3,9 @@ import type {
   StudioFeedbackListSuccess,
   StudioFeedbackView,
   StudioMode,
+  StudioModerationSuccess,
   StudioNewFeedbackCountSuccess,
+  StudioNextFeedbackSuccess,
   StudioPhoneRevealSuccess,
   StudioReplyCreateSuccess,
   StudioReplyType,
@@ -130,6 +132,28 @@ export function updateStudioTodo(feedbackId: string, enabled: boolean): Promise<
   return request(
     `/api/studio/feedbacks/${encodeURIComponent(feedbackId)}/todo`,
     jsonInit(enabled ? "POST" : "DELETE"),
+  );
+}
+
+export function updateStudioModeration(
+  feedbackId: string,
+  filtered: boolean,
+): Promise<StudioModerationSuccess> {
+  return request(
+    `/api/studio/feedbacks/${encodeURIComponent(feedbackId)}/moderation`,
+    jsonInit("PUT", { filtered }),
+  );
+}
+
+export function getNextStudioFeedback(
+  feedbackId: string,
+  view: "unreplied" | "todo",
+  topic?: Topic | null,
+): Promise<StudioNextFeedbackSuccess> {
+  const query = new URLSearchParams({ view });
+  if (topic) query.set("topic", topic);
+  return request(
+    `/api/studio/feedbacks/${encodeURIComponent(feedbackId)}/next?${query}`,
   );
 }
 

@@ -16,7 +16,6 @@ const base = {
   customTopic: null,
   content: "产品在使用中偶尔断开连接。",
   nickname: "测试观众",
-  phone: "13800138000",
   privacyAgreed: true,
   livestreamAgreed: true,
 } as const;
@@ -39,10 +38,11 @@ describe("shared validation", () => {
     expect(feedbackFieldsSchema.safeParse({ ...base, topic: "appeal", content: "字".repeat(2001) }).success).toBe(false);
   });
 
-  it("normalizes +86 numbers and rejects non-mainland formats", () => {
+  it("normalizes nicknames for exact history lookup while keeping dormant phone validation intact", () => {
     expect(phoneSchema.parse("+86 138-0013-8000")).toBe("13800138000");
     expect(phoneSchema.safeParse("85366123456").success).toBe(false);
-    expect(historyQuerySchema.safeParse({ phone: "13800138000", nickname: " 昵称 " }).success).toBe(true);
+    expect(historyQuerySchema.parse({ nickname: " 昵称 " })).toEqual({ nickname: "昵称" });
+    expect(historyQuerySchema.parse({ nickname: "ZhangDao" }).nickname).not.toBe("zhangdao");
   });
 
   it("validates Studio credentials, search input, and the 2000-character reply boundary", () => {

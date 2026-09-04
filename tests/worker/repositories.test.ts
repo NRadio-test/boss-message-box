@@ -5,18 +5,16 @@ import { D1FeedbackRepository, D1OtpRepository } from "../../worker/infra/d1-rep
 const PHONE_HASH = "test-phone-hmac-not-a-phone";
 
 function feedbackInput(input: {
-  challengeId: string;
   now: number;
   nickname?: string;
   submissionKey?: string;
+  id?: string;
 }) {
   return {
-    id: crypto.randomUUID(),
+    id: input.id ?? crypto.randomUUID(),
     submissionKey: input.submissionKey ?? crypto.randomUUID(),
-    userId: crypto.randomUUID(),
-    phoneHash: PHONE_HASH,
-    phoneEncrypted: "v1.iv.ciphertext",
     nickname: input.nickname ?? "测试昵称",
+    beijingDay: "2026-09-04",
     topic: "appeal" as const,
     customTopic: null,
     content: "完整留言",
@@ -24,7 +22,6 @@ function feedbackInput(input: {
     privacyAgreedAt: input.now,
     livestreamPolicyVersion: "2026-09-03",
     livestreamAgreedAt: input.now,
-    challengeId: input.challengeId,
     images: [],
     now: input.now,
   };
@@ -44,50 +41,19 @@ async function seedChallenge(challengeId: string, now: number): Promise<void> {
 describe("D1 feedback repository", () => {
   beforeEach(async () => {
     await env.BOSS_MESSAGE_DB.batch([
+      env.BOSS_MESSAGE_DB.prepare("DELETE FROM feedback_replies"),
       env.BOSS_MESSAGE_DB.prepare("DELETE FROM feedback_images"),
       env.BOSS_MESSAGE_DB.prepare("DELETE FROM feedback"),
-      env.BOSS_MESSAGE_DB.prepare("DELETE FROM users"),
-      env.BOSS_MESSAGE_DB.prepare("DELETE FROM otp_challenges"),
+      env.BOSS_MESSAGE_DB.prepare("DELETE FROM nickname_daily_limits"),
     ]);
   });
 
-  it("atomically creates a first user, feedback and consumes OTP", async () => {
+  it("creates nickname-only feedback and stores a processed image larger than 2 MiB", async () => {
     const now = Date.now();
-    const challengeId = crypto.randomUUID();
-    await seedChallenge(challengeId, now);
     const repository = new D1FeedbackRepository(env.BOSS_MESSAGE_DB);
-    const result = await repository.createWithUserAndConsumeOtp({
-      id: crypto.randomUUID(),
-      submissionKey: crypto.randomUUID(),
-      userId: crypto.randomUUID(),
-      phoneHash: PHONE_HASH,
-      phoneEncrypted: "v1.iv.ciphertext",
-      nickname: "测试昵称",
-      topic: "other",
-      customTopic: "其他主题",
-      content: "完整留言",
-      privacyPolicyVersion: "2026-09-03",
-      privacyAgreedAt: now,
-      livestreamPolicyVersion: "2026-09-03",
-      livestreamAgreedAt: now,
-      challengeId,
-      images: [],
-      now,
-    });
-    expect(result.status).toBe("created");
-    expect((await env.BOSS_MESSAGE_DB.prepare("SELECT COUNT(*) AS count FROM users").first<{ count: number }>())?.count).toBe(1);
-    expect((await env.BOSS_MESSAGE_DB.prepare("SELECT COUNT(*) AS count FROM feedback").first<{ count: number }>())?.count).toBe(1);
-    expect((await env.BOSS_MESSAGE_DB.prepare("SELECT consumed_at FROM otp_challenges WHERE id = ?").bind(challengeId).first<{ consumed_at: number }>())?.consumed_at).toBe(now);
-  });
+    const input = feedbackInput({ now });
 
-  it("stores a processed image larger than 2 MiB without a database size gate", async () => {
-    const now = Date.now();
-    const challengeId = crypto.randomUUID();
-    await seedChallenge(challengeId, now);
-    const repository = new D1FeedbackRepository(env.BOSS_MESSAGE_DB);
-    const input = feedbackInput({ challengeId, now });
-
-    const result = await repository.createWithUserAndConsumeOtp({
+    const result = await repository.create({
       ...input,
       images: [
         {
@@ -105,205 +71,92 @@ describe("D1 feedback repository", () => {
     expect(result.status).toBe("created");
     expect(
       await env.BOSS_MESSAGE_DB
+        .prepare("SELECT user_id, douyin_nickname FROM feedback WHERE id = ?")
+        .bind(input.id)
+        .first<{ user_id: string | null; douyin_nickname: string }>(),
+    ).toEqual({ user_id: null, douyin_nickname: "测试昵称" });
+    expect(
+      await env.BOSS_MESSAGE_DB
         .prepare("SELECT byte_size FROM feedback_images WHERE feedback_id = ?")
         .bind(input.id)
         .first<{ byte_size: number }>(),
     ).toEqual({ byte_size: 2 * 1024 * 1024 + 1 });
   });
 
-  it("lets an existing phone submit again with the same nickname without duplicating the user", async () => {
-    const repository = new D1FeedbackRepository(env.BOSS_MESSAGE_DB);
+  it("allows ten successful submissions per exact nickname and rejects the eleventh atomically", async () => {
     const now = Date.now();
-    const firstChallengeId = crypto.randomUUID();
-    const secondChallengeId = crypto.randomUUID();
-    await seedChallenge(firstChallengeId, now);
-    await seedChallenge(secondChallengeId, now + 1_000);
+    const repository = new D1FeedbackRepository(env.BOSS_MESSAGE_DB);
 
-    const first = await repository.createWithUserAndConsumeOtp(
-      feedbackInput({ challengeId: firstChallengeId, now }),
-    );
-    const second = await repository.createWithUserAndConsumeOtp(
-      feedbackInput({ challengeId: secondChallengeId, now: now + 1_000 }),
-    );
+    for (let index = 0; index < 10; index += 1) {
+      await expect(repository.create(feedbackInput({ now: now + index }))).resolves.toMatchObject({
+        status: "created",
+      });
+    }
+    await expect(repository.create(feedbackInput({ now: now + 10 }))).resolves.toEqual({
+      status: "daily_limit",
+    });
+    expect(
+      await env.BOSS_MESSAGE_DB
+        .prepare("SELECT COUNT(*) AS count FROM feedback WHERE douyin_nickname = ?")
+        .bind("测试昵称")
+        .first<{ count: number }>(),
+    ).toEqual({ count: 10 });
+    expect(
+      await env.BOSS_MESSAGE_DB
+        .prepare("SELECT submission_count FROM nickname_daily_limits WHERE nickname = ?")
+        .bind("测试昵称")
+        .first<{ submission_count: number }>(),
+    ).toEqual({ submission_count: 10 });
 
-    expect(first.status).toBe("created");
-    expect(second.status).toBe("created");
-    expect(
-      (await env.BOSS_MESSAGE_DB.prepare("SELECT COUNT(*) AS count FROM users").first<{ count: number }>())
-        ?.count,
-    ).toBe(1);
-    expect(
-      (await env.BOSS_MESSAGE_DB.prepare("SELECT COUNT(*) AS count FROM feedback").first<{ count: number }>())
-        ?.count,
-    ).toBe(2);
-    const challenges = await env.BOSS_MESSAGE_DB
-      .prepare("SELECT id, consumed_at FROM otp_challenges ORDER BY created_at")
-      .all<{ id: string; consumed_at: number | null }>();
-    expect(challenges.results).toEqual([
-      { id: firstChallengeId, consumed_at: now },
-      { id: secondChallengeId, consumed_at: now + 1_000 },
-    ]);
+    await expect(repository.create({
+      ...feedbackInput({ now: now + 86_400_000 }),
+      beijingDay: "2026-09-05",
+    })).resolves.toMatchObject({ status: "created" });
   });
 
-  it("rejects a different nickname for an existing phone and leaves the OTP usable", async () => {
-    const repository = new D1FeedbackRepository(env.BOSS_MESSAGE_DB);
+  it("treats different case as a different exact nickname", async () => {
     const now = Date.now();
-    const firstChallengeId = crypto.randomUUID();
-    const mismatchChallengeId = crypto.randomUUID();
-    await seedChallenge(firstChallengeId, now);
-    await seedChallenge(mismatchChallengeId, now + 1_000);
-    await repository.createWithUserAndConsumeOtp(
-      feedbackInput({ challengeId: firstChallengeId, now }),
-    );
+    const repository = new D1FeedbackRepository(env.BOSS_MESSAGE_DB);
 
-    const mismatch = await repository.createWithUserAndConsumeOtp(
-      feedbackInput({
-        challengeId: mismatchChallengeId,
-        now: now + 1_000,
-        nickname: "另一个昵称",
-      }),
-    );
+    await repository.create(feedbackInput({ now, nickname: "ZhangDao" }));
+    await repository.create(feedbackInput({ now: now + 1, nickname: "zhangdao" }));
 
-    expect(mismatch).toEqual({ status: "nickname_mismatch" });
-    expect(
-      (await env.BOSS_MESSAGE_DB.prepare("SELECT COUNT(*) AS count FROM feedback").first<{ count: number }>())
-        ?.count,
-    ).toBe(1);
-    expect(
-      (
-        await env.BOSS_MESSAGE_DB
-          .prepare("SELECT consumed_at FROM otp_challenges WHERE id = ?")
-          .bind(mismatchChallengeId)
-          .first<{ consumed_at: number | null }>()
-      )?.consumed_at,
-    ).toBeNull();
+    expect((await repository.findHistory("ZhangDao"))?.length).toBe(1);
+    expect((await repository.findHistory("zhangdao"))?.length).toBe(1);
+    expect(await repository.findHistory("ZHANGDAO")).toBeNull();
   });
 
-  it("maps internal reply states to the only two public states", async () => {
+  it("shows a filtered item in public history and keeps its replies visible", async () => {
     const now = Date.now();
-    const challengeId = crypto.randomUUID();
-    await seedChallenge(challengeId, now);
     const repository = new D1FeedbackRepository(env.BOSS_MESSAGE_DB);
     const feedbackId = crypto.randomUUID();
-    await repository.createWithUserAndConsumeOtp({
-      id: feedbackId,
-      submissionKey: crypto.randomUUID(),
-      userId: crypto.randomUUID(),
-      phoneHash: PHONE_HASH,
-      phoneEncrypted: "v1.iv.ciphertext",
-      nickname: "测试昵称",
-      topic: "appeal",
-      customTopic: null,
-      content: "需要回复",
-      privacyPolicyVersion: "v1",
-      privacyAgreedAt: now,
-      livestreamPolicyVersion: "v1",
-      livestreamAgreedAt: now,
-      challengeId,
-      images: [],
-      now,
+    await repository.create(feedbackInput({ now, id: feedbackId }));
+    await repository.setModerationResult({
+      feedbackId,
+      status: "filtered",
+      category: "abusive",
+      reason: "包含辱骂内容",
+      now: now + 1,
     });
-    expect((await repository.findHistory(PHONE_HASH, "测试昵称"))?.[0]?.status).toBe("unreplied");
     await env.BOSS_MESSAGE_DB
-      .prepare("UPDATE feedback SET internal_status = 'message_replied', reply_type = 'message', reply_content = '已处理' WHERE id = ?")
-      .bind(feedbackId)
+      .prepare(
+        `INSERT INTO feedback_replies
+          (id, feedback_id, reply_type, content, admin_id, created_at)
+         VALUES ('public-reply', ?, 'message', '已处理', NULL, ?)`,
+      )
+      .bind(feedbackId, now + 2)
       .run();
-    const history = await repository.findHistory(PHONE_HASH, "测试昵称");
-    expect(history?.[0]).toMatchObject({ status: "replied", replyContent: "已处理" });
-    expect(await repository.findHistory(PHONE_HASH, "错误昵称")).toBeNull();
-  });
 
-  it("returns every public reply oldest first without exposing the internal admin", async () => {
-    const now = Date.now();
-    const challengeId = crypto.randomUUID();
-    await seedChallenge(challengeId, now);
-    const repository = new D1FeedbackRepository(env.BOSS_MESSAGE_DB);
-    const feedbackId = crypto.randomUUID();
-    await repository.createWithUserAndConsumeOtp({
-      ...feedbackInput({ challengeId, now }),
+    expect((await repository.findHistory("测试昵称"))?.[0]).toMatchObject({
       id: feedbackId,
+      status: "filtered",
+      replyContent: "已处理",
+      replies: [{ id: "public-reply", content: "已处理" }],
     });
-    await env.BOSS_MESSAGE_DB.batch([
-      env.BOSS_MESSAGE_DB
-        .prepare(
-          `INSERT INTO feedback_replies
-            (id, feedback_id, reply_type, content, admin_id, created_at)
-           VALUES ('reply-later', ?, 'message', '第二条公开回复', 'admin-fa', ?)`,
-        )
-        .bind(feedbackId, now + 2_000),
-      env.BOSS_MESSAGE_DB
-        .prepare(
-          `INSERT INTO feedback_replies
-            (id, feedback_id, reply_type, content, admin_id, created_at)
-           VALUES ('reply-earlier', ?, 'live', '第一条公开回复', 'admin-zd', ?)`,
-        )
-        .bind(feedbackId, now + 1_000),
-    ]);
-
-    const history = await repository.findHistory(PHONE_HASH, "测试昵称");
-    expect(history?.[0]).toMatchObject({
-      id: feedbackId,
-      status: "replied",
-      replyContent: "第二条公开回复",
-      replies: [
-        {
-          id: "reply-earlier",
-          replyType: "live",
-          content: "第一条公开回复",
-          createdAt: now + 1_000,
-        },
-        {
-          id: "reply-later",
-          replyType: "message",
-          content: "第二条公开回复",
-          createdAt: now + 2_000,
-        },
-      ],
-    });
-    expect(Object.keys(history![0]!.replies[0]!).sort()).toEqual([
-      "content",
-      "createdAt",
-      "id",
-      "replyType",
-    ]);
-    expect(JSON.stringify(history)).not.toContain("admin-zd");
-    expect(JSON.stringify(history)).not.toContain("admin-fa");
-  });
-
-  it("database constraints reject replied state without reply content", async () => {
-    const now = Date.now();
-    const challengeId = crypto.randomUUID();
-    await seedChallenge(challengeId, now);
-    const repository = new D1FeedbackRepository(env.BOSS_MESSAGE_DB);
-    const feedbackId = crypto.randomUUID();
-    await repository.createWithUserAndConsumeOtp({
-      id: feedbackId,
-      submissionKey: crypto.randomUUID(),
-      userId: crypto.randomUUID(),
-      phoneHash: PHONE_HASH,
-      phoneEncrypted: "v1.iv.ciphertext",
-      nickname: "测试昵称",
-      topic: "appeal",
-      customTopic: null,
-      content: "约束测试",
-      privacyPolicyVersion: "v1",
-      privacyAgreedAt: now,
-      livestreamPolicyVersion: "v1",
-      livestreamAgreedAt: now,
-      challengeId,
-      images: [],
-      now,
-    });
-    await expect(
-      env.BOSS_MESSAGE_DB
-        .prepare("UPDATE feedback SET internal_status = 'message_replied', reply_type = 'message', reply_content = NULL WHERE id = ?")
-        .bind(feedbackId)
-        .run(),
-    ).rejects.toThrow();
   });
 });
 
-describe("D1 OTP cooldown", () => {
+describe("dormant D1 OTP protections", () => {
   beforeEach(async () => {
     await env.BOSS_MESSAGE_DB.batch([
       env.BOSS_MESSAGE_DB.prepare("DELETE FROM otp_phone_state"),
@@ -311,7 +164,7 @@ describe("D1 OTP cooldown", () => {
     ]);
   });
 
-  it("keeps the 120 second send cooldown after a successful verification flow", async () => {
+  it("keeps the existing 120 second send cooldown available for a future re-enable", async () => {
     const repository = new D1OtpRepository(env.BOSS_MESSAGE_DB);
     const now = 1_800_000_000_000;
     const firstLease = crypto.randomUUID();
@@ -325,9 +178,8 @@ describe("D1 OTP cooldown", () => {
       }),
     ).toEqual({ reserved: true });
 
-    const challengeId = crypto.randomUUID();
     await repository.commitSent({
-      challengeId,
+      challengeId: crypto.randomUUID(),
       phoneHash: PHONE_HASH,
       leaseToken: firstLease,
       codeMac: "mac",
@@ -335,32 +187,19 @@ describe("D1 OTP cooldown", () => {
       now,
       expiresAt: now + 300_000,
     });
-    await env.BOSS_MESSAGE_DB
-      .prepare("UPDATE otp_challenges SET consumed_at = ? WHERE id = ?")
-      .bind(now + 1_000, challengeId)
-      .run();
-
-    const blocked = await repository.reserveSend({
-      phoneHash: PHONE_HASH,
-      leaseToken: crypto.randomUUID(),
-      now: now + 119_000,
-      leaseSeconds: 120,
-      cooldownSeconds: 120,
-    });
-    expect(blocked).toEqual({ reserved: false, retryAfterSeconds: 1 });
 
     expect(
       await repository.reserveSend({
         phoneHash: PHONE_HASH,
         leaseToken: crypto.randomUUID(),
-        now: now + 120_000,
+        now: now + 119_000,
         leaseSeconds: 120,
         cooldownSeconds: 120,
       }),
-    ).toEqual({ reserved: true });
+    ).toEqual({ reserved: false, retryAfterSeconds: 1 });
   });
 
-  it("invalidates an OTP on the sixth wrong attempt and never increments beyond six", async () => {
+  it("invalidates a dormant OTP on the sixth wrong attempt", async () => {
     const repository = new D1OtpRepository(env.BOSS_MESSAGE_DB);
     const now = 1_800_000_000_000;
     const challengeId = crypto.randomUUID();
@@ -369,7 +208,6 @@ describe("D1 OTP cooldown", () => {
     for (let attempt = 1; attempt <= 6; attempt += 1) {
       expect(await repository.recordFailedAttempt(challengeId, now + attempt)).toBe(attempt);
     }
-    expect(await repository.recordFailedAttempt(challengeId, now + 7)).toBe(6);
     expect(await repository.findChallenge(challengeId, PHONE_HASH)).toMatchObject({
       attemptCount: 6,
       invalidatedAt: now + 6,

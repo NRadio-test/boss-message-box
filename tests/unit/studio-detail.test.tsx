@@ -25,6 +25,9 @@ const detail = {
     replyCount: 0,
     latestReplyAdmin: null,
     replies: [],
+    moderationStatus: "kept",
+    moderationCategory: "valid_feedback",
+    moderationReason: "有效反馈",
   },
 };
 
@@ -76,6 +79,9 @@ function mockDetailApi() {
         latestReplyAdmin: "zd",
       }), { status: 200, headers: { "Content-Type": "application/json" } });
     }
+    if (url.includes(`/api/studio/feedbacks/${feedbackId}/next`)) {
+      return new Response(JSON.stringify({ ok: true, nextFeedbackId: null }), { status: 200, headers: { "Content-Type": "application/json" } });
+    }
     if (url.includes(`/api/studio/feedbacks/${feedbackId}`)) {
       return new Response(JSON.stringify(detail), { status: 200, headers: { "Content-Type": "application/json" } });
     }
@@ -103,18 +109,29 @@ describe("Studio reply interaction", () => {
     await waitFor(() => expect(fetchMock.mock.calls.filter(([, init]) => init?.method === "POST")).toHaveLength(1));
   });
 
-  it("submits directly with a locked live reply type in live mode", async () => {
+  it("saves a nonempty live reply before advancing", async () => {
     const fetchMock = mockDetailApi();
     const user = userEvent.setup();
     renderDetail(true);
     await screen.findByRole("heading", { name: "申冤" });
     expect(screen.queryByRole("radio")).not.toBeInTheDocument();
     await user.type(screen.getByRole("textbox", { name: "回复内容" }), "直播回复内容");
-    await user.click(screen.getByRole("button", { name: "提交" }));
+    await user.click(screen.getByRole("button", { name: "下一条" }));
 
     await waitFor(() => expect(fetchMock.mock.calls.filter(([, init]) => init?.method === "POST")).toHaveLength(1));
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
     const post = fetchMock.mock.calls.find(([, init]) => init?.method === "POST");
     expect(JSON.parse(String(post?.[1]?.body))).toEqual({ content: "直播回复内容" });
+  });
+
+  it("advances without creating a reply when the live reply is empty", async () => {
+    const fetchMock = mockDetailApi();
+    const user = userEvent.setup();
+    renderDetail(true);
+    await screen.findByRole("heading", { name: "申冤" });
+    await user.click(screen.getByRole("button", { name: "下一条" }));
+
+    await waitFor(() => expect(screen.getByRole("button", { name: "已经是最后一条" })).toBeDisabled());
+    expect(fetchMock.mock.calls.filter(([, init]) => init?.method === "POST")).toHaveLength(0);
   });
 });

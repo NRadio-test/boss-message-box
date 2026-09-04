@@ -11,7 +11,10 @@ export const studioFeedbackViewSchema = z.enum([
   "live",
   "message",
   "todo",
+  "filtered",
 ]);
+
+export const moderationStatusSchema = z.enum(["pending", "kept", "filtered", "failed"]);
 
 export const studioLoginSchema = z.object({
   username: z.string().trim().min(1, "请输入账号").max(40, "账号格式无效").transform((value) => value.toLowerCase()),
@@ -58,17 +61,20 @@ export interface StudioReply {
 export interface StudioFeedbackSummary {
   id: string;
   feedbackNumber: string;
-  userId: string;
+  userId: string | null;
   nickname: string;
   topic: Topic;
   customTopic: string | null;
   contentPreview: string;
   imageCount: number;
   createdAt: number;
-  status: "unreplied" | "replied";
+  status: "unreplied" | "replied" | "filtered";
   isTodo: boolean;
   replyCount: number;
   latestReplyAdmin: string | null;
+  moderationStatus: "pending" | "kept" | "filtered" | "failed";
+  moderationCategory: "valid_feedback" | "abusive" | "meaningless" | "uncertain" | null;
+  moderationReason: string | null;
 }
 
 export interface StudioFeedbackImage {
@@ -83,7 +89,7 @@ export interface StudioFeedbackImage {
 
 export interface StudioFeedbackDetail extends StudioFeedbackSummary {
   content: string;
-  maskedPhone: string;
+  maskedPhone: string | null;
   images: StudioFeedbackImage[];
   replies: StudioReply[];
 }
@@ -124,6 +130,17 @@ export interface StudioReplyCreateSuccess {
 export interface StudioTodoSuccess {
   ok: true;
   isTodo: boolean;
+}
+
+export interface StudioModerationSuccess {
+  ok: true;
+  moderationStatus: "filtered" | "kept";
+  isTodo: false;
+}
+
+export interface StudioNextFeedbackSuccess {
+  ok: true;
+  nextFeedbackId: string | null;
 }
 
 export interface StudioUserDetailSuccess {

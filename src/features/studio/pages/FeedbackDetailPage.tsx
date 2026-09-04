@@ -1,19 +1,27 @@
 import {
   ArrowLeft,
+  ArrowRight,
   Broadcast,
   ChatCircleText,
   Clock,
   Eye,
   ImageSquare,
   PaperPlaneTilt,
+  ShieldWarning,
   UserCircle,
 } from "@phosphor-icons/react";
 import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from "react";
 import { Link, useLocation, useNavigate, useOutletContext, useParams } from "react-router-dom";
 import { Button } from "../../../components/Button";
-import { TOPIC_LABELS } from "../../../shared/contracts";
+import { TOPIC_LABELS, TOPIC_VALUES, type Topic } from "../../../shared/contracts";
 import type { StudioFeedbackDetail, StudioReplyType } from "../../../shared/studio-contracts";
-import { createStudioReply, getStudioFeedback, revealStudioPhone } from "../api";
+import {
+  createStudioReply,
+  getNextStudioFeedback,
+  getStudioFeedback,
+  revealStudioPhone,
+  updateStudioModeration,
+} from "../api";
 import type { StudioReturnContext } from "../navigation-context";
 import { StudioError, StudioLoading } from "../components/AsyncState";
 import { ConfirmDialog } from "../components/ConfirmDialog";
@@ -50,6 +58,10 @@ export function FeedbackDetailPage() {
   const [replyContent, setReplyContent] = useState("");
   const [replyError, setReplyError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
+  const [moderationBusy, setModerationBusy] = useState(false);
+  const [nextBusy, setNextBusy] = useState(false);
+  const [atEnd, setAtEnd] = useState(false);
+  const [liveNotice, setLiveNotice] = useState<string | null>(null);
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [lightboxIndex, setLightboxIndex] = useState<number | null>(null);
   const replyRef = useRef<HTMLTextAreaElement>(null);
@@ -58,6 +70,11 @@ export function FeedbackDetailPage() {
     const controller = new AbortController();
     getStudioFeedback(feedbackId, controller.signal)
       .then((value) => {
+        setAtEnd(false);
+        setLiveNotice(null);
+        setReplyContent("");
+        setReplyType(null);
+        setReplyError(null);
         setLoaded({ feedbackId, item: value.item });
         setError(null);
       })
@@ -91,7 +108,7 @@ export function FeedbackDetailPage() {
 
   const revealPhone = async () => {
     const fullPhone = !liveMode && revealedPhone && revealedPhone.userId === item?.userId ? revealedPhone.phone : null;
-    if (!item || liveMode || revealing || fullPhone) return;
+    if (!item?.userId || liveMode || revealing || fullPhone) return;
     setRevealing(true);
     setReplyError(null);
     try {
@@ -143,7 +160,7 @@ export function FeedbackDetailPage() {
         item: {
           ...current.item,
           replies: [...current.item.replies, value.reply],
-          status: value.status,
+          status: current.item.moderationStatus === "filtered" ? "filtered" : value.status,
           isTodo: value.isTodo,
           replyCount: value.replyCount,
           latestReplyAdmin: value.latestReplyAdmin,
@@ -156,6 +173,88 @@ export function FeedbackDetailPage() {
       setReplyError(reason instanceof Error ? reason.message : "回复提交失败，请稍后重试");
     } finally {
       setSubmitting(false);
+    }
+  };
+
+  const applyReply = (value: Awaited<ReturnType<typeof createStudioReply>>) => {
+    setLoaded((current) => current?.feedbackId === feedbackId ? {
+      feedbackId,
+      item: {
+        ...current.item,
+        replies: [...current.item.replies, value.reply],
+        status: current.item.moderationStatus === "filtered" ? "filtered" : value.status,
+        isTodo: value.isTodo,
+        replyCount: value.replyCount,
+        latestReplyAdmin: value.latestReplyAdmin,
+      },
+    } : current);
+  };
+
+  const setFiltered = async (filtered: boolean) => {
+    if (!item || liveMode || moderationBusy) return;
+    setModerationBusy(true);
+    setReplyError(null);
+    try {
+      const result = await updateStudioModeration(item.id, filtered);
+      setLoaded((current) => current?.feedbackId === feedbackId ? {
+        feedbackId,
+        item: {
+          ...current.item,
+          moderationStatus: result.moderationStatus,
+          moderationCategory: null,
+          moderationReason: filtered ? "manual_filter" : "manual_restore",
+          isTodo: false,
+          status: filtered
+            ? "filtered"
+            : current.item.replyCount > 0 ? "replied" : "unreplied",
+        },
+      } : current);
+    } catch (reason) {
+      setReplyError(reason instanceof Error ? reason.message : "过滤状态更新失败");
+    } finally {
+      setModerationBusy(false);
+    }
+  };
+
+  const goNext = async () => {
+    if (!item || nextBusy || atEnd) return;
+    const content = replyContent.trim();
+    if (content.length > 2000) {
+      setReplyError("回复内容不能超过 2000 个字符");
+      replyRef.current?.focus();
+      return;
+    }
+    setNextBusy(true);
+    setReplyError(null);
+    setLiveNotice(null);
+    try {
+      if (content) {
+        const value = await createStudioReply(item.id, content);
+        applyReply(value);
+        setReplyContent("");
+      }
+      const query = new URLSearchParams(location.search);
+      const view = query.get("view") === "todo" ? "todo" : "unreplied";
+      const topicValue = query.get("topic");
+      const topic = topicValue && TOPIC_VALUES.includes(topicValue as Topic)
+        ? topicValue as Topic
+        : null;
+      const next = await getNextStudioFeedback(item.id, view, topic);
+      if (!next.nextFeedbackId) {
+        setAtEnd(true);
+        setLiveNotice("已经是最后一条了");
+        return;
+      }
+      const nextQuery = new URLSearchParams({ mode: "live", view });
+      if (topic) nextQuery.set("topic", topic);
+      navigate(`/studio/feedback/${encodeURIComponent(next.nextFeedbackId)}?${nextQuery}`, {
+        replace: true,
+        state: { returnContext },
+      });
+    } catch (reason) {
+      setReplyError(reason instanceof Error ? reason.message : "下一条留言暂时无法加载");
+    } finally {
+      setNextBusy(false);
     }
   };
 
@@ -178,14 +277,20 @@ export function FeedbackDetailPage() {
       <header className="studio-detail-heading">
         <button type="button" className="studio-back-button" onClick={goBack}><ArrowLeft aria-hidden="true" />返回</button>
         <div>
-          <span className={`studio-status studio-status--${item.status}`}>{item.status === "replied" ? "已回复" : "未回复"}</span>
+          <span className={`studio-status studio-status--${item.status}`}>
+            {item.status === "filtered" ? "已过滤" : item.status === "replied" ? "已回复" : "未回复"}
+          </span>
           <code>#{item.feedbackNumber}</code>
         </div>
       </header>
 
       <article className="studio-feedback-detail">
         <div className="studio-detail-identity">
-          <div><span>抖音昵称</span><Link to={`/studio/user/${encodeURIComponent(item.userId)}${liveMode ? "?mode=live" : ""}`} state={{ backTo: currentDetailUrl, detailState: location.state }}><UserCircle aria-hidden="true" />{item.nickname}</Link></div>
+          <div><span>抖音昵称</span>{item.userId ? (
+            <Link to={`/studio/user/${encodeURIComponent(item.userId)}${liveMode ? "?mode=live" : ""}`} state={{ backTo: currentDetailUrl, detailState: location.state }}><UserCircle aria-hidden="true" />{item.nickname}</Link>
+          ) : (
+            <strong><UserCircle aria-hidden="true" />{item.nickname}</strong>
+          )}</div>
         </div>
         <div className="studio-detail-section">
           <span>主题</span>
@@ -214,7 +319,7 @@ export function FeedbackDetailPage() {
           </section>
         )}
 
-        <section className="studio-detail-section studio-phone-section" aria-labelledby="studio-phone-title">
+        {item.userId && item.maskedPhone && <section className="studio-detail-section studio-phone-section" aria-labelledby="studio-phone-title">
           <span id="studio-phone-title">手机号</span>
           {liveMode ? (
             <div className="studio-phone-value is-locked"><Broadcast aria-hidden="true" />直播模式下仅显示 {item.maskedPhone}</div>
@@ -231,7 +336,37 @@ export function FeedbackDetailPage() {
               {!fullPhone && !revealing && <small>双击显示完整号码</small>}
             </button>
           )}
-        </section>
+        </section>}
+
+        {!liveMode && (
+          <section className="studio-detail-section studio-moderation-section" aria-labelledby="studio-moderation-title">
+            <div>
+              <span id="studio-moderation-title">内容筛选</span>
+              <strong>
+                {item.moderationStatus === "filtered"
+                  ? "已过滤"
+                  : item.moderationStatus === "failed"
+                    ? "AI 筛选失败，留言已保留"
+                    : item.moderationStatus === "pending"
+                      ? "等待 AI 筛选"
+                      : "已保留"}
+              </strong>
+              {item.moderationReason && item.moderationStatus === "filtered" && (
+                <small>{item.moderationReason}</small>
+              )}
+            </div>
+            <Button
+              type="button"
+              variant="secondary"
+              loading={moderationBusy}
+              loadingLabel="正在更新"
+              icon={<ShieldWarning aria-hidden="true" />}
+              onClick={() => void setFiltered(item.moderationStatus !== "filtered")}
+            >
+              {item.moderationStatus === "filtered" ? "恢复留言" : "标记为已过滤"}
+            </Button>
+          </section>
+        )}
 
         <section className="studio-detail-section" aria-labelledby="studio-replies-title">
           <div className="studio-section-title"><span id="studio-replies-title">历史回复</span><small>{replies.length} 条</small></div>
@@ -253,7 +388,7 @@ export function FeedbackDetailPage() {
       </article>
 
       <section className="studio-reply-composer" aria-labelledby="studio-compose-title">
-        <div className="studio-section-title"><h2 id="studio-compose-title">追加回复</h2><small>{replyContent.length} / 2000</small></div>
+        <div className="studio-section-title"><h2 id="studio-compose-title">{liveMode ? "直播回复（可留空）" : "追加回复"}</h2><small>{replyContent.length} / 2000</small></div>
         <fieldset className="studio-reply-types">
           <legend>回复方式</legend>
           {liveMode ? (
@@ -281,11 +416,28 @@ export function FeedbackDetailPage() {
           }}
         />
         {replyError && <p id="studio-reply-error" className="studio-field-error" role="alert">{replyError}</p>}
-        <div className="studio-detail-actions">
+        {!liveMode && <div className="studio-detail-actions">
           <Button type="button" variant="quiet" icon={<ArrowLeft aria-hidden="true" />} onClick={goBack}>返回</Button>
           <Button type="button" loading={submitting} loadingLabel="正在提交" icon={<PaperPlaneTilt aria-hidden="true" weight="fill" />} onClick={requestSubmit}>提交</Button>
-        </div>
+        </div>}
       </section>
+
+      {liveMode && (
+        <div className="studio-live-next-wrap">
+          {liveNotice && <span role="status">{liveNotice}</span>}
+          <Button
+            type="button"
+            className="studio-live-next"
+            loading={nextBusy}
+            loadingLabel={replyContent.trim() ? "正在保存并前进" : "正在打开下一条"}
+            disabled={atEnd}
+            icon={<ArrowRight aria-hidden="true" weight="bold" />}
+            onClick={() => void goNext()}
+          >
+            {atEnd ? "已经是最后一条" : "下一条"}
+          </Button>
+        </div>
+      )}
 
       <ConfirmDialog
         open={confirmOpen}

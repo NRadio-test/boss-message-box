@@ -13,7 +13,7 @@ export interface DraftState {
   customTopic: string | null;
   content: string;
   nickname: string;
-  phone: string;
+  imagesEnabled: boolean;
   privacyAgreed: boolean;
   livestreamAgreed: boolean;
   updatedAt: number;
@@ -44,7 +44,7 @@ export const EMPTY_DRAFT = (): DraftState => ({
   customTopic: null,
   content: "",
   nickname: "",
-  phone: "",
+  imagesEnabled: false,
   privacyAgreed: false,
   livestreamAgreed: false,
   updatedAt: Date.now(),
@@ -53,7 +53,19 @@ export const EMPTY_DRAFT = (): DraftState => ({
 export function loadDraft(): DraftState | null {
   try {
     const value = localStorage.getItem(DRAFT_KEY);
-    return value ? (JSON.parse(value) as DraftState) : null;
+    if (!value) return null;
+    const stored = JSON.parse(value) as Partial<DraftState>;
+    return {
+      submissionKey: typeof stored.submissionKey === "string" ? stored.submissionKey : createRandomUuid(),
+      topic: stored.topic ?? "",
+      customTopic: stored.customTopic ?? null,
+      content: stored.content ?? "",
+      nickname: stored.nickname ?? "",
+      imagesEnabled: stored.imagesEnabled ?? false,
+      privacyAgreed: stored.privacyAgreed ?? false,
+      livestreamAgreed: stored.livestreamAgreed ?? false,
+      updatedAt: stored.updatedAt ?? Date.now(),
+    };
   } catch {
     return null;
   }
@@ -84,14 +96,16 @@ export function clearOtpSession(): void {
   localStorage.removeItem(OTP_KEY);
 }
 
-export function saveIdentity(phone: string, nickname: string): void {
-  localStorage.setItem(IDENTITY_KEY, JSON.stringify({ phone, nickname }));
+export function saveIdentity(nickname: string): void {
+  localStorage.setItem(IDENTITY_KEY, JSON.stringify({ nickname }));
 }
 
-export function loadIdentity(): { phone: string; nickname: string } | null {
+export function loadIdentity(): { nickname: string } | null {
   try {
     const value = localStorage.getItem(IDENTITY_KEY);
-    return value ? (JSON.parse(value) as { phone: string; nickname: string }) : null;
+    if (!value) return null;
+    const stored = JSON.parse(value) as { nickname?: unknown };
+    return typeof stored.nickname === "string" ? { nickname: stored.nickname } : null;
   } catch {
     return null;
   }

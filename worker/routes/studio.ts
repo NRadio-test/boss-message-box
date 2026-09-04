@@ -56,6 +56,11 @@ const newFeedbackQuerySchema = z.object({
   afterId: z.string().uuid(),
   topic: topicSchema.optional(),
 });
+const moderationUpdateSchema = z.object({ filtered: z.boolean() });
+const nextFeedbackQuerySchema = z.object({
+  view: z.enum(["unreplied", "todo"]),
+  topic: topicSchema.optional(),
+});
 
 function services(env: Env): {
   auth: StudioAuthService;
@@ -187,6 +192,7 @@ studioRoutes.get("/feedbacks", async (context) => {
         parsed.data.snapshotCreatedAt === undefined
           ? null
           : { createdAt: parsed.data.snapshotCreatedAt, id: parsed.data.snapshotId! },
+      session: context.get("studioSession"),
     }),
   );
 });
@@ -200,13 +206,30 @@ studioRoutes.post("/search", async (context) => {
       query: parsed.data.query,
       page: parsed.data.page,
       snapshot: parsed.data.snapshot ?? null,
+      session: context.get("studioSession"),
     }),
   );
 });
 
 studioRoutes.get("/feedbacks/:feedbackId", async (context) => {
   const feedbackId = parseId(feedbackIdSchema, context.req.param("feedbackId"));
-  return context.json(await services(context.env).studio.feedback(feedbackId));
+  return context.json(
+    await services(context.env).studio.feedback(feedbackId, context.get("studioSession")),
+  );
+});
+
+studioRoutes.get("/feedbacks/:feedbackId/next", async (context) => {
+  const feedbackId = parseId(feedbackIdSchema, context.req.param("feedbackId"));
+  const parsed = nextFeedbackQuerySchema.safeParse(context.req.query());
+  if (!parsed.success) throw validationError(parsed.error);
+  return context.json(
+    await services(context.env).studio.nextFeedback({
+      feedbackId,
+      view: parsed.data.view,
+      topic: parsed.data.topic ?? null,
+      session: context.get("studioSession"),
+    }),
+  );
 });
 
 studioRoutes.post("/feedbacks/:feedbackId/replies", async (context) => {
@@ -251,9 +274,26 @@ studioRoutes.delete("/feedbacks/:feedbackId/todo", async (context) => {
   );
 });
 
+studioRoutes.put("/feedbacks/:feedbackId/moderation", async (context) => {
+  requireSameOrigin(context.req.raw);
+  const feedbackId = parseId(feedbackIdSchema, context.req.param("feedbackId"));
+  const parsed = moderationUpdateSchema.safeParse(await context.req.json().catch(() => null));
+  if (!parsed.success) throw validationError(parsed.error);
+  return context.json(
+    await services(context.env).studio.moderation({
+      feedbackId,
+      filtered: parsed.data.filtered,
+      session: context.get("studioSession"),
+      now: Date.now(),
+    }),
+  );
+});
+
 studioRoutes.get("/users/:userId", async (context) => {
   const userId = parseId(feedbackIdSchema, context.req.param("userId"));
-  return context.json(await services(context.env).studio.user(userId));
+  return context.json(
+    await services(context.env).studio.user(userId, context.get("studioSession")),
+  );
 });
 
 studioRoutes.post("/users/:userId/reveal-phone", async (context) => {
@@ -285,7 +325,11 @@ studioRoutes.get("/new-feedback-count", async (context) => {
 studioRoutes.get("/feedbacks/:feedbackId/images/:imageId", async (context) => {
   const feedbackId = parseId(feedbackIdSchema, context.req.param("feedbackId"));
   const imageId = parseId(imageIdSchema, context.req.param("imageId"));
-  const object = await services(context.env).studio.image(feedbackId, imageId);
+  const object = await services(context.env).studio.image(
+    feedbackId,
+    imageId,
+    context.get("studioSession"),
+  );
   const download = context.req.query("download") === "1";
   const headers = new Headers({
     "Cache-Control": "private, no-store",

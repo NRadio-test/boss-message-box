@@ -3,6 +3,8 @@ import {
   type StudioFeedbackListSuccess,
   type StudioFeedbackView,
   type StudioNewFeedbackCountSuccess,
+  type StudioNextFeedbackSuccess,
+  type StudioModerationSuccess,
   type StudioPhoneRevealSuccess,
   type StudioReplyCreateSuccess,
   type StudioReplyType,
@@ -21,13 +23,13 @@ import type {
 } from "../core/studio-ports";
 import type { PhoneCryptoService } from "../core/ports";
 
-const MACAU_OFFSET_MS = 8 * 60 * 60 * 1000;
+const BEIJING_OFFSET_MS = 8 * 60 * 60 * 1000;
 
-function macauDayStartedAt(now: number): number {
-  const shifted = new Date(now + MACAU_OFFSET_MS);
+function beijingDayStartedAt(now: number): number {
+  const shifted = new Date(now + BEIJING_OFFSET_MS);
   return (
     Date.UTC(shifted.getUTCFullYear(), shifted.getUTCMonth(), shifted.getUTCDate()) -
-    MACAU_OFFSET_MS
+    BEIJING_OFFSET_MS
   );
 }
 
@@ -45,7 +47,11 @@ export class StudioService {
     topic: Topic | null;
     page: number;
     snapshot: StudioSnapshot | null;
+    session: StudioSessionRecord;
   }): Promise<StudioFeedbackListSuccess> {
+    if (input.session.mode === "live" && input.view !== "unreplied" && input.view !== "todo") {
+      throw new PublicError(403, "FORBIDDEN", "直播展示模式只能查看未回复或待办留言");
+    }
     return this.dependencies.studio.listFeedbacks(input);
   }
 
@@ -53,7 +59,11 @@ export class StudioService {
     query: string;
     page: number;
     snapshot: StudioSnapshot | null;
+    session: StudioSessionRecord;
   }): Promise<StudioSearchSuccess> {
+    if (input.session.mode === "live") {
+      throw new PublicError(403, "FORBIDDEN", "直播展示模式不能使用搜索");
+    }
     const phone = phoneSchema.safeParse(input.query);
     if (phone.success) {
       return {
@@ -88,9 +98,15 @@ export class StudioService {
     };
   }
 
-  async feedback(feedbackId: string): Promise<StudioFeedbackDetailSuccess> {
+  async feedback(
+    feedbackId: string,
+    session?: StudioSessionRecord,
+  ): Promise<StudioFeedbackDetailSuccess> {
     const item = await this.dependencies.studio.findFeedback(feedbackId);
     if (!item) throw new PublicError(404, "NOT_FOUND", "留言不存在");
+    if (session?.mode === "live" && item.moderationStatus === "filtered") {
+      throw new PublicError(403, "FORBIDDEN", "已过滤留言不能进入直播模式");
+    }
     return { ok: true, item };
   }
 
@@ -101,6 +117,11 @@ export class StudioService {
     session: StudioSessionRecord;
     now: number;
   }): Promise<StudioReplyCreateSuccess> {
+    const feedback = await this.dependencies.studio.getFeedbackSummary(input.feedbackId);
+    if (!feedback) throw new PublicError(404, "NOT_FOUND", "留言不存在");
+    if (input.session.mode === "live" && feedback.moderationStatus === "filtered") {
+      throw new PublicError(403, "FORBIDDEN", "已过滤留言不能在直播模式回复");
+    }
     const replyType = input.session.mode === "live" ? "live" : input.requestedType;
     if (!replyType) throw new PublicError(400, "VALIDATION_ERROR", "请选择回复方式");
     const result = await this.dependencies.studio.appendReply({
@@ -129,6 +150,11 @@ export class StudioService {
     if (input.session.mode === "live") {
       throw new PublicError(403, "FORBIDDEN", "直播展示模式不能修改待办");
     }
+    const feedback = await this.dependencies.studio.getFeedbackSummary(input.feedbackId);
+    if (!feedback) throw new PublicError(404, "NOT_FOUND", "留言不存在");
+    if (input.isTodo && feedback.moderationStatus === "filtered") {
+      throw new PublicError(409, "FORBIDDEN", "已过滤留言不能加入待办");
+    }
     const isTodo = await this.dependencies.studio.setTodo({
       feedbackId: input.feedbackId,
       isTodo: input.isTodo,
@@ -139,7 +165,48 @@ export class StudioService {
     return { ok: true, isTodo };
   }
 
-  async user(userId: string): Promise<StudioUserDetailSuccess> {
+  async moderation(input: {
+    feedbackId: string;
+    filtered: boolean;
+    session: StudioSessionRecord;
+    now: number;
+  }): Promise<StudioModerationSuccess> {
+    if (input.session.mode === "live") {
+      throw new PublicError(403, "FORBIDDEN", "直播展示模式不能修改过滤状态");
+    }
+    const result = await this.dependencies.studio.setModeration({
+      feedbackId: input.feedbackId,
+      filtered: input.filtered,
+      adminId: input.session.admin.id,
+      now: input.now,
+    });
+    if (!result) throw new PublicError(404, "NOT_FOUND", "留言不存在");
+    return { ok: true, ...result };
+  }
+
+  async nextFeedback(input: {
+    feedbackId: string;
+    view: "unreplied" | "todo";
+    topic: Topic | null;
+    session: StudioSessionRecord;
+  }): Promise<StudioNextFeedbackSuccess> {
+    if (input.session.mode !== "live") {
+      throw new PublicError(403, "FORBIDDEN", "下一条仅用于直播展示模式");
+    }
+    return {
+      ok: true,
+      nextFeedbackId: await this.dependencies.studio.findNextFeedback({
+        currentFeedbackId: input.feedbackId,
+        view: input.view,
+        topic: input.topic,
+      }),
+    };
+  }
+
+  async user(userId: string, session: StudioSessionRecord): Promise<StudioUserDetailSuccess> {
+    if (session.mode === "live") {
+      throw new PublicError(403, "FORBIDDEN", "直播展示模式不能查看历史用户资料");
+    }
     const result = await this.dependencies.studio.findUser(userId);
     if (!result) throw new PublicError(404, "NOT_FOUND", "用户不存在");
     return result;
@@ -165,7 +232,7 @@ export class StudioService {
   }
 
   async stats(now: number): Promise<StudioStatsSuccess> {
-    return { ok: true, ...(await this.dependencies.studio.getStats(macauDayStartedAt(now))) };
+    return { ok: true, ...(await this.dependencies.studio.getStats(beijingDayStartedAt(now))) };
   }
 
   async newFeedbackCount(
@@ -175,11 +242,17 @@ export class StudioService {
     return { ok: true, count: await this.dependencies.studio.countNewFeedback(after, topic) };
   }
 
-  async image(feedbackId: string, imageId: string): Promise<{
+  async image(feedbackId: string, imageId: string, session: StudioSessionRecord): Promise<{
     body: ReadableStream;
     size: number;
     etag: string;
   }> {
+    if (session.mode === "live") {
+      const feedback = await this.dependencies.studio.getFeedbackSummary(feedbackId);
+      if (!feedback || feedback.moderationStatus === "filtered") {
+        throw new PublicError(404, "NOT_FOUND", "图片不存在");
+      }
+    }
     const reference = await this.dependencies.studio.findImage(feedbackId, imageId);
     if (!reference) throw new PublicError(404, "NOT_FOUND", "图片不存在");
     const object = await this.dependencies.images.getPrivate(reference.objectKey);
