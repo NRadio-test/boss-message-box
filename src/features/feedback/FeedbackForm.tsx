@@ -12,6 +12,7 @@ import { Button } from "../../components/Button";
 import { FormField } from "../../components/FormField";
 import { TurnstileWidget, type TurnstileHandle } from "../../components/TurnstileWidget";
 import { ApiClientError, requestOtp, submitFeedback } from "../../lib/api";
+import { createRandomUuid } from "../../lib/random-id";
 import {
   feedbackFieldsSchema,
   TOPIC_LABELS,
@@ -60,7 +61,9 @@ function draftHasContent(draft: DraftState): boolean {
 }
 
 function collectErrors(issues: Array<{ path: PropertyKey[]; message: string }>): Record<string, string> {
-  return Object.fromEntries(issues.map((issue) => [String(issue.path[0] ?? "form"), issue.message]));
+  const errors: Record<string, string> = {};
+  for (const issue of issues) errors[String(issue.path[0] ?? "form")] = issue.message;
+  return errors;
 }
 
 export function FeedbackForm({ config }: { config: PublicConfig }) {
@@ -262,7 +265,15 @@ export function FeedbackForm({ config }: { config: PublicConfig }) {
     if (files.length > available) setImageMessage(`只添加了前 ${available} 张图片，每次最多 3 张`);
     else setImageMessage(null);
     setCompressing(selected.length);
-    const results = await Promise.allSettled(selected.map(compressImage));
+    const results = await Promise.all(
+      selected.map(async (file) => {
+        try {
+          return { status: "fulfilled" as const, value: await compressImage(file) };
+        } catch (reason) {
+          return { status: "rejected" as const, reason };
+        }
+      }),
+    );
     const added: LocalImage[] = [];
     for (const result of results) {
       if (result.status === "rejected") {
@@ -270,9 +281,9 @@ export function FeedbackForm({ config }: { config: PublicConfig }) {
         continue;
       }
       const image: LocalImage = {
-        id: crypto.randomUUID(),
+        id: createRandomUuid(),
         blob: result.value.blob,
-        name: `draft-${crypto.randomUUID()}.webp`,
+        name: `draft-${createRandomUuid()}.webp`,
         width: result.value.width,
         height: result.value.height,
         byteSize: result.value.blob.size,

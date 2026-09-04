@@ -1,6 +1,7 @@
 import { X } from "@phosphor-icons/react";
 import { useEffect, useRef } from "react";
 import { Button } from "../../../components/Button";
+import { closeDialog, openDialog } from "../../../lib/dialog";
 
 interface ConfirmDialogProps {
   open: boolean;
@@ -28,8 +29,8 @@ export function ConfirmDialog({
   useEffect(() => {
     const dialog = ref.current;
     if (!dialog) return;
-    if (open && !dialog.open) dialog.showModal();
-    if (!open && dialog.open) dialog.close();
+    if (open && !dialog.open) openDialog(dialog);
+    if (!open && dialog.open) closeDialog(dialog);
   }, [open]);
 
   return (

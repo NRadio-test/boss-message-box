@@ -1,5 +1,6 @@
 import { X } from "@phosphor-icons/react";
 import { useEffect, useRef } from "react";
+import { closeDialog, openDialog } from "../../lib/dialog";
 
 interface PolicyDialogProps {
   open: boolean;
@@ -13,8 +14,8 @@ export function PolicyDialog({ open, kind, version, onClose }: PolicyDialogProps
   useEffect(() => {
     const dialog = ref.current;
     if (!dialog) return;
-    if (open && !dialog.open) dialog.showModal();
-    if (!open && dialog.open) dialog.close();
+    if (open && !dialog.open) openDialog(dialog);
+    if (!open && dialog.open) closeDialog(dialog);
   }, [open]);
 
   return (
@@ -24,7 +25,7 @@ export function PolicyDialog({ open, kind, version, onClose }: PolicyDialogProps
           <span className="dialog-kicker">{kind === "privacy" ? "隐私说明" : "直播展示"}</span>
           <h2>{kind === "privacy" ? "隐私政策" : "直播公开展示说明"}</h2>
         </div>
-        <button type="button" className="icon-button" onClick={() => ref.current?.close()} aria-label="关闭">
+        <button type="button" className="icon-button" onClick={() => ref.current && closeDialog(ref.current)} aria-label="关闭">
           <X aria-hidden="true" weight="bold" />
         </button>
       </div>
@@ -32,7 +33,7 @@ export function PolicyDialog({ open, kind, version, onClose }: PolicyDialogProps
         {kind === "privacy" ? <PrivacyContent version={version} /> : <LivestreamContent />}
       </div>
       <div className="dialog-actions">
-        <button type="button" className="button button--primary" onClick={() => ref.current?.close()}>
+        <button type="button" className="button button--primary" onClick={() => ref.current && closeDialog(ref.current)}>
           我知道了
         </button>
       </div>

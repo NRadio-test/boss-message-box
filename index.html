@@ -12,7 +12,14 @@
   </head>
   <body>
     <a class="skip-link" href="#main-content">跳到主要内容</a>
-    <div id="root"></div>
+    <div id="root">
+      <main class="boot-state boot-state--static" aria-live="polite">
+        <span class="boot-signal" aria-hidden="true"></span>
+        <p>正在打开张导请回答…</p>
+        <p class="boot-hint">若页面长时间没有显示，请更新微信，或在右上角选择用系统浏览器打开。</p>
+      </main>
+    </div>
+    <script src="/compat.js"></script>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>

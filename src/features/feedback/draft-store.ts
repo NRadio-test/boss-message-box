@@ -1,4 +1,5 @@
 import type { Topic } from "../../shared/contracts";
+import { createRandomUuid } from "../../lib/random-id";
 
 const DRAFT_KEY = "boss-message-box:draft:v1";
 const OTP_KEY = "boss-message-box:otp:v1";
@@ -38,7 +39,7 @@ export interface OtpSession {
 }
 
 export const EMPTY_DRAFT = (): DraftState => ({
-  submissionKey: crypto.randomUUID(),
+  submissionKey: createRandomUuid(),
   topic: "",
   customTopic: null,
   content: "",

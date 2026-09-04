@@ -26,7 +26,9 @@ export function LoginPage() {
     event.preventDefault();
     const parsed = studioLoginSchema.safeParse({ username, password });
     if (!parsed.success) {
-      setErrors(Object.fromEntries(parsed.error.issues.map((issue) => [String(issue.path[0]), issue.message])));
+      const nextErrors: Record<string, string> = {};
+      for (const issue of parsed.error.issues) nextErrors[String(issue.path[0])] = issue.message;
+      setErrors(nextErrors);
       return;
     }
     setErrors({});

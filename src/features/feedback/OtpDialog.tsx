@@ -1,6 +1,7 @@
 import { ArrowClockwise, X } from "@phosphor-icons/react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Button } from "../../components/Button";
+import { closeDialog, openDialog } from "../../lib/dialog";
 import type { OtpSession } from "./draft-store";
 
 interface OtpDialogProps {
@@ -30,8 +31,8 @@ export function OtpDialog({
   useEffect(() => {
     const dialog = dialogRef.current;
     if (!dialog) return;
-    if (open && !dialog.open) dialog.showModal();
-    if (!open && dialog.open) dialog.close();
+    if (open && !dialog.open) openDialog(dialog);
+    if (!open && dialog.open) closeDialog(dialog);
   }, [open]);
 
   useEffect(() => {
@@ -73,7 +74,7 @@ export function OtpDialog({
           <span className="dialog-kicker">手机校验</span>
           <h2>验证手机号</h2>
         </div>
-        <button type="button" className="icon-button" onClick={() => dialogRef.current?.close()} aria-label="关闭验证">
+        <button type="button" className="icon-button" onClick={() => dialogRef.current && closeDialog(dialogRef.current)} aria-label="关闭验证">
           <X aria-hidden="true" weight="bold" />
         </button>
       </div>

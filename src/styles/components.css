@@ -1,5 +1,6 @@
 .app-shell {
   width: min(100%, 74rem);
+  min-height: 100vh;
   min-height: 100svh;
   margin-inline: auto;
   padding-inline: clamp(var(--space-4), 4vw, var(--space-8));
@@ -81,6 +82,7 @@
 .primary-nav svg { width: 1rem; height: 1rem; }
 
 #main-content {
+  min-height: calc(100vh - 10rem);
   min-height: calc(100svh - 10rem);
   padding-block: clamp(var(--space-8), 7vw, var(--space-16));
 }
@@ -276,8 +278,12 @@
   transition: border-color var(--motion-fast) var(--ease-out), background-color var(--motion-fast) var(--ease-out);
 }
 
-.phone-input:focus-within { border-color: var(--color-accent); background: var(--color-surface-raised); }
-.phone-input:has(input:focus-visible) { outline: 0.1875rem solid var(--color-focus-ring); outline-offset: 0.1875rem; }
+.phone-input:focus-within {
+  border-color: var(--color-accent);
+  background: var(--color-surface-raised);
+  outline: 0.1875rem solid var(--color-focus-ring);
+  outline-offset: 0.1875rem;
+}
 .phone-prefix {
   display: flex;
   align-self: stretch;
@@ -494,6 +500,7 @@
 
 dialog {
   width: min(calc(100% - 2rem), 34rem);
+  max-height: min(44rem, calc(100vh - 2rem));
   max-height: min(44rem, calc(100svh - 2rem));
   padding: 0;
   overflow: hidden;
@@ -505,6 +512,16 @@ dialog {
 }
 
 dialog::backdrop { background: var(--color-backdrop); }
+dialog:not([open]) { display: none; }
+dialog[data-dialog-fallback][open] {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  margin: auto;
+  box-shadow: 0 0 0 100vmax var(--color-backdrop), var(--shadow-dialog);
+}
+.has-fallback-dialog,
+.has-fallback-dialog body { overflow: hidden; }
 
 .policy-dialog[open] {
   display: grid;
@@ -672,6 +689,7 @@ dialog::backdrop { background: var(--color-backdrop); }
 
 .boot-state {
   display: grid;
+  min-height: 100vh;
   min-height: 100svh;
   place-content: center;
   justify-items: center;
@@ -681,6 +699,7 @@ dialog::backdrop { background: var(--color-backdrop); }
   text-align: center;
 }
 .boot-state h1 { color: var(--color-text); font-size: var(--type-h1); }
+.boot-hint { max-width: 26rem; color: var(--color-text-muted); font-size: var(--type-body-sm); }
 .boot-signal { display: block; width: 3rem; height: 0.2rem; border-radius: var(--radius-pill); background: var(--color-accent); animation: pulse 1.2s var(--ease-out) infinite alternate; }
 @keyframes pulse { to { transform: scaleX(0.35); opacity: 0.45; } }
 .route-loading { min-height: 40svh; display: grid; place-items: center; color: var(--color-text-muted); }
@@ -716,6 +735,7 @@ dialog::backdrop { background: var(--color-backdrop); }
   dialog {
     width: 100%;
     max-width: none;
+    max-height: calc(100vh - var(--space-4));
     max-height: calc(100svh - var(--space-4));
     margin: auto 0 0;
     border-radius: var(--radius-shell) var(--radius-shell) 0 0;

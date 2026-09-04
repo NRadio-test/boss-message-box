@@ -39,7 +39,9 @@ export function SearchPage() {
   const [snapshots, setSnapshots] = useState<Record<string, StudioSnapshot | null>>(() =>
     query ? { [query]: restored?.snapshot ?? null } : {},
   );
-  const snapshot = Object.hasOwn(snapshots, query) ? snapshots[query] ?? null : restored?.snapshot ?? null;
+  const snapshot = Object.prototype.hasOwnProperty.call(snapshots, query)
+    ? snapshots[query] ?? null
+    : restored?.snapshot ?? null;
 
   useEffect(() => {
     if (!query) return;

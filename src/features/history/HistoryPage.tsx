@@ -28,7 +28,9 @@ export function HistoryPage() {
   const submit = async () => {
     const parsed = historyQuerySchema.safeParse({ phone, nickname });
     if (!parsed.success) {
-      setErrors(Object.fromEntries(parsed.error.issues.map((issue) => [String(issue.path[0]), issue.message])));
+      const nextErrors: Record<string, string> = {};
+      for (const issue of parsed.error.issues) nextErrors[String(issue.path[0])] = issue.message;
+      setErrors(nextErrors);
       requestAnimationFrame(() =>
         document.querySelector<HTMLElement>('.history-query [aria-invalid="true"]')?.focus(),
       );

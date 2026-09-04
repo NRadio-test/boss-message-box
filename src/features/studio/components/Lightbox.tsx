@@ -1,5 +1,6 @@
 import { ArrowLeft, ArrowRight, DownloadSimple, X } from "@phosphor-icons/react";
 import { useEffect, useRef, useState } from "react";
+import { closeDialog, openDialog } from "../../../lib/dialog";
 
 export interface LightboxImage {
   id: string;
@@ -24,7 +25,7 @@ export function Lightbox({ images, initialIndex, onClose }: LightboxProps) {
   useEffect(() => {
     const dialog = ref.current;
     if (!dialog || dialog.open) return;
-    dialog.showModal();
+    openDialog(dialog);
   }, []);
 
   if (!current) return null;
@@ -39,7 +40,7 @@ export function Lightbox({ images, initialIndex, onClose }: LightboxProps) {
       onClose={onClose}
       onCancel={(event) => {
         event.preventDefault();
-        ref.current?.close();
+        if (ref.current) closeDialog(ref.current);
       }}
       onKeyDown={(event) => {
         if (images.length < 2) return;
@@ -53,7 +54,7 @@ export function Lightbox({ images, initialIndex, onClose }: LightboxProps) {
           <a className="studio-icon-button" href={current.downloadUrl} download aria-label="下载当前图片">
             <DownloadSimple aria-hidden="true" weight="bold" />
           </a>
-          <button type="button" className="studio-icon-button" aria-label="关闭图片" onClick={() => ref.current?.close()}>
+          <button type="button" className="studio-icon-button" aria-label="关闭图片" onClick={() => ref.current && closeDialog(ref.current)}>
             <X aria-hidden="true" weight="bold" />
           </button>
         </div>

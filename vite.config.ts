@@ -5,7 +5,8 @@ import { defineConfig } from "vite";
 export default defineConfig({
   plugins: [react(), cloudflare()],
   build: {
-    target: "es2022",
+    target: ["chrome66", "safari12"],
+    cssTarget: "chrome61",
     sourcemap: true,
   },
 });
