@@ -69,6 +69,7 @@ export function HistoryPage() {
             value={nickname}
             maxLength={40}
             autoComplete="nickname"
+            enterKeyHint="next"
             onChange={(event) => setNickname(event.target.value)}
             aria-invalid={Boolean(errors.nickname)}
             aria-describedby={errors.nickname ? "history-nickname-error" : undefined}
@@ -83,6 +84,7 @@ export function HistoryPage() {
               type="tel"
               inputMode="tel"
               autoComplete="tel-national"
+              enterKeyHint="search"
               value={phone}
               maxLength={13}
               onChange={(event) => setPhone(event.target.value.replace(/[^\d\s-]/g, ""))}

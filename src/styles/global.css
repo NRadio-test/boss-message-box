@@ -7,6 +7,7 @@
 html {
   background: var(--color-bg);
   font-family: var(--font-sans);
+  scroll-padding-block: var(--space-4) 35vh;
   scroll-behavior: smooth;
   text-size-adjust: 100%;
 }
@@ -15,6 +16,7 @@ body {
   min-width: 20rem;
   min-height: 100vh;
   min-height: 100svh;
+  min-height: 100dvh;
   margin: 0;
   overflow-x: hidden;
   background:
@@ -31,6 +33,15 @@ input,
 textarea,
 select {
   font: inherit;
+}
+
+button,
+input,
+textarea,
+select,
+a {
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: oklch(0.84 0.13 218 / 0.18);
 }
 
 button,
@@ -85,6 +96,8 @@ img {
   position: fixed;
   inset-block-start: var(--space-3);
   inset-inline-start: var(--space-3);
+  inset-block-start: max(var(--space-3), env(safe-area-inset-top));
+  inset-inline-start: max(var(--space-3), env(safe-area-inset-left));
   z-index: 100;
   padding: var(--space-3) var(--space-4);
   border-radius: var(--radius-control);

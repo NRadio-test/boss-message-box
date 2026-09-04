@@ -443,6 +443,7 @@ export function FeedbackForm({ config }: { config: PublicConfig }) {
             value={draft.nickname}
             maxLength={40}
             autoComplete="nickname"
+            enterKeyHint="next"
             placeholder="请输入你的抖音昵称"
             onChange={(event) => update("nickname", event.target.value)}
             aria-invalid={Boolean(errors.nickname)}
@@ -459,6 +460,7 @@ export function FeedbackForm({ config }: { config: PublicConfig }) {
               type="tel"
               inputMode="tel"
               autoComplete="tel-national"
+              enterKeyHint="done"
               value={draft.phone}
               maxLength={13}
               onChange={(event) => update("phone", event.target.value.replace(/[^\d\s-]/g, ""))}
