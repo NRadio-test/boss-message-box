@@ -274,4 +274,47 @@ describe("D1 Studio repository", () => {
       snapshot: null,
     })).pagination.total).toBe(32);
   });
+
+  it("deduplicates a reply request and rejects reuse with different content", async () => {
+    const feedbackId = "70000001-feedback";
+    await seedFeedback({ id: feedbackId, createdAt: 20_000, moderationStatus: "pending" });
+    const repository = new D1StudioRepository(env.BOSS_MESSAGE_DB);
+    const input = { feedbackId, requestKey: crypto.randomUUID(), replyType: "message" as const, content: "保存一次", admin: ADMIN_ZD, now: 21_000 };
+    const results = await Promise.all([
+      repository.appendReply({ ...input, id: "first-request" }),
+      repository.appendReply({ ...input, id: "retry-request" }),
+    ]);
+    expect(results[0]?.reply.id).toBe(results[1]?.reply.id);
+    expect(await repository.findFeedback(feedbackId)).toMatchObject({ replyCount: 1, moderationStatus: "kept" });
+    expect(await env.BOSS_MESSAGE_DB.prepare("SELECT COUNT(*) AS n FROM audit_logs WHERE feedback_id = ?").bind(feedbackId).first()).toMatchObject({ n: 1 });
+    await expect(repository.appendReply({ ...input, id: "changed-request", content: "不同内容" })).rejects.toMatchObject({ code: "REQUEST_CONFLICT" });
+  });
+
+  it("skips pending/filtered records in the live queue and atomically rejects a pending live reply", async () => {
+    await seedFeedback({ id: "80000004-feedback", createdAt: 4 });
+    await seedFeedback({ id: "80000003-feedback", createdAt: 3, moderationStatus: "pending" });
+    await seedFeedback({ id: "80000002-feedback", createdAt: 2, moderationStatus: "filtered" });
+    await seedFeedback({ id: "80000001-feedback", createdAt: 1, moderationStatus: "failed" });
+    const repository = new D1StudioRepository(env.BOSS_MESSAGE_DB);
+    expect(await repository.findNextFeedback({ currentFeedbackId: "80000004-feedback", view: "unreplied", topic: null })).toBe("80000001-feedback");
+    expect((await repository.listFeedbacks({ view: "unreplied", page: 1, topic: null, snapshot: null, readyOnly: true })).items.map((item) => item.id)).toEqual(["80000004-feedback", "80000001-feedback"]);
+    await expect(repository.appendReply({ id: "blocked-reply", feedbackId: "80000003-feedback", liveMode: true, replyType: "live", content: "不能提前展示", admin: ADMIN_ZD, now: 5 })).rejects.toMatchObject({ code: "FEEDBACK_NOT_READY" });
+  });
+
+  it("searches numeric/hex nicknames and receipt numbers together", async () => {
+    await seedFeedback({ id: "deadbeef-feedback", createdAt: 2 });
+    await seedFeedback({ id: "90000001-feedback", createdAt: 1 });
+    await env.BOSS_MESSAGE_DB.prepare("UPDATE feedback SET douyin_nickname = 'deadbeef' WHERE id = '90000001-feedback'").run();
+    const repository = new D1StudioRepository(env.BOSS_MESSAGE_DB);
+    expect((await repository.searchFeedbacks({ queryType: "combined", queryValue: "deadbeef", page: 1, snapshot: null })).items).toHaveLength(2);
+    await env.BOSS_MESSAGE_DB.prepare("UPDATE feedback SET douyin_nickname = '13906325777' WHERE id = '90000001-feedback'").run();
+    expect((await repository.searchFeedbacks({ queryType: "combined", queryValue: "13906325777", page: 1, snapshot: null })).items.map((item) => item.id)).toEqual(["90000001-feedback"]);
+  });
+
+  it("counts a feedback as replied today even if it already had an older reply", async () => {
+    await seedFeedback({ id: "a0000001-feedback", createdAt: 100 });
+    await seedReply({ id: "yesterday", feedbackId: "a0000001-feedback", type: "live", adminId: ADMIN_ZD.id, createdAt: 200 });
+    await seedReply({ id: "today", feedbackId: "a0000001-feedback", type: "message", adminId: ADMIN_ZD.id, createdAt: 1_000 });
+    expect(await new D1StudioRepository(env.BOSS_MESSAGE_DB).getStats(900)).toMatchObject({ todayReplied: 1 });
+  });
 });

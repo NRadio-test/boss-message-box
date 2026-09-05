@@ -1,9 +1,18 @@
 import type { PasswordVerifier } from "../core/studio-ports";
-import { base64UrlToBytes, utf8 } from "./encoding";
+import { base64UrlToBytes, bytesToBase64Url, utf8 } from "./encoding";
 
 const HASH_NAME = "pbkdf2-sha256";
 const MIN_ITERATIONS = 100_000;
 const MAX_ITERATIONS = 2_000_000;
+
+export async function hashPassword(password: string): Promise<string> {
+  const salt = crypto.getRandomValues(new Uint8Array(16));
+  const material = await crypto.subtle.importKey("raw", utf8(password), "PBKDF2", false, ["deriveBits"]);
+  const derived = await crypto.subtle.deriveBits(
+    { name: "PBKDF2", hash: "SHA-256", salt, iterations: MIN_ITERATIONS }, material, 256,
+  );
+  return `${HASH_NAME}$${MIN_ITERATIONS}$${bytesToBase64Url(salt)}$${bytesToBase64Url(new Uint8Array(derived))}`;
+}
 
 function equalBytes(left: Uint8Array, right: Uint8Array): boolean {
   if (left.byteLength !== right.byteLength) return false;
@@ -44,4 +53,3 @@ export class Pbkdf2PasswordVerifier implements PasswordVerifier {
     }
   }
 }
-

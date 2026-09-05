@@ -341,19 +341,18 @@ export class D1FeedbackRepository implements FeedbackRepository {
     throw new DatabaseOutcomeUnknownError();
   }
 
-  async findHistory(nickname: string): Promise<PublicFeedback[] | null> {
+  async findHistory(nickname: string, before?: { createdAt: number; id: string }): Promise<PublicFeedback[] | null> {
     const rows = await this.db
       .prepare(
         `SELECT f.id, f.topic, f.custom_topic, f.content, f.internal_status, f.reply_type,
                 f.reply_content, f.moderation_status, f.created_at, f.updated_at,
-                COUNT(i.id) AS image_count
+                (SELECT COUNT(*) FROM feedback_images i WHERE i.feedback_id = f.id) AS image_count
          FROM feedback f
-         LEFT JOIN feedback_images i ON i.feedback_id = f.id
          WHERE f.douyin_nickname = ?
-         GROUP BY f.id
-         ORDER BY f.created_at DESC, f.id DESC`,
+         ${before ? "AND (f.created_at < ? OR (f.created_at = ? AND f.id < ?))" : ""}
+         ORDER BY f.created_at DESC, f.id DESC LIMIT 31`,
       )
-      .bind(nickname)
+      .bind(nickname, ...(before ? [before.createdAt, before.createdAt, before.id] : []))
       .all<{
         id: string;
         topic: Topic;
@@ -372,11 +371,10 @@ export class D1FeedbackRepository implements FeedbackRepository {
       .prepare(
         `SELECT reply.id, reply.feedback_id, reply.reply_type, reply.content, reply.created_at
            FROM feedback_replies reply
-           JOIN feedback f ON f.id = reply.feedback_id
-          WHERE f.douyin_nickname = ?
+          WHERE reply.feedback_id IN (${rows.results.map(() => "?").join(",")})
           ORDER BY reply.created_at ASC, reply.id ASC`,
       )
-      .bind(nickname)
+      .bind(...rows.results.map((row) => row.id))
       .all<{
         id: string;
         feedback_id: string;
@@ -427,10 +425,12 @@ export class D1FeedbackRepository implements FeedbackRepository {
 
   async setModerationResult(input: {
     feedbackId: string;
+    attemptToken: string;
     status: "kept" | "filtered" | "failed";
     category: "valid_feedback" | "abusive" | "meaningless" | "uncertain" | null;
     reason: string | null;
     now: number;
+    nextRetryAt?: number;
   }): Promise<void> {
     await this.db
       .prepare(
@@ -438,8 +438,11 @@ export class D1FeedbackRepository implements FeedbackRepository {
          SET moderation_status = ?, moderation_source = 'ai', moderation_category = ?,
              moderation_reason = ?, moderated_at = ?,
              is_todo = CASE WHEN ? = 'filtered' THEN 0 ELSE is_todo END,
-             updated_at = ?
-         WHERE id = ? AND moderation_status = 'pending' AND moderation_source IS NULL`,
+             updated_at = ?, moderation_attempt_token = NULL, moderation_next_retry_at = ?
+         WHERE id = ? AND moderation_attempt_token = ?
+           AND moderation_status IN ('pending', 'failed')
+           AND COALESCE(moderation_source, '') <> 'manual'
+           AND NOT EXISTS (SELECT 1 FROM feedback_replies WHERE feedback_id = feedback.id)`,
       )
       .bind(
         input.status,
@@ -448,7 +451,9 @@ export class D1FeedbackRepository implements FeedbackRepository {
         input.now,
         input.status,
         input.now,
+        input.status === "failed" ? input.nextRetryAt ?? input.now + 60_000 : 0,
         input.feedbackId,
+        input.attemptToken,
       )
       .run();
   }

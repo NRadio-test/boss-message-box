@@ -14,7 +14,7 @@ import {
   type StudioTodoSuccess,
   type StudioUserDetailSuccess,
 } from "../../src/shared/studio-contracts";
-import { phoneSchema, type Topic } from "../../src/shared/contracts";
+import { type Topic } from "../../src/shared/contracts";
 import { PublicError } from "../core/errors";
 import type {
   PrivateImageReader,
@@ -38,7 +38,7 @@ export class StudioService {
     private readonly dependencies: {
       studio: StudioRepository;
       images: PrivateImageReader;
-      phoneCrypto: PhoneCryptoService;
+      phoneCrypto: PhoneCryptoService | (() => PhoneCryptoService);
     },
   ) {}
 
@@ -52,7 +52,7 @@ export class StudioService {
     if (input.session.mode === "live" && input.view !== "unreplied" && input.view !== "todo") {
       throw new PublicError(403, "FORBIDDEN", "直播展示模式只能查看未回复或待办留言");
     }
-    return this.dependencies.studio.listFeedbacks(input);
+    return this.dependencies.studio.listFeedbacks({ ...input, readyOnly: input.session.mode === "live" });
   }
 
   async search(input: {
@@ -64,37 +64,14 @@ export class StudioService {
     if (input.session.mode === "live") {
       throw new PublicError(403, "FORBIDDEN", "直播展示模式不能使用搜索");
     }
-    const phone = phoneSchema.safeParse(input.query);
-    if (phone.success) {
-      return {
-        ...(await this.dependencies.studio.searchFeedbacks({
-          queryType: "phone",
-          queryValue: await this.dependencies.phoneCrypto.hash(phone.data),
-          page: input.page,
-          snapshot: input.snapshot,
-        })),
-        queryType: "phone",
-      };
-    }
-    if (/^[0-9a-f]{8}$/iu.test(input.query)) {
-      return {
-        ...(await this.dependencies.studio.searchFeedbacks({
-          queryType: "feedback_number",
-          queryValue: input.query.toUpperCase(),
-          page: input.page,
-          snapshot: input.snapshot,
-        })),
-        queryType: "feedback_number",
-      };
-    }
     return {
       ...(await this.dependencies.studio.searchFeedbacks({
-        queryType: "nickname",
+        queryType: "combined",
         queryValue: input.query.normalize("NFC"),
         page: input.page,
         snapshot: input.snapshot,
       })),
-      queryType: "nickname",
+      queryType: "combined",
     };
   }
 
@@ -104,13 +81,14 @@ export class StudioService {
   ): Promise<StudioFeedbackDetailSuccess> {
     const item = await this.dependencies.studio.findFeedback(feedbackId);
     if (!item) throw new PublicError(404, "NOT_FOUND", "留言不存在");
-    if (session?.mode === "live" && item.moderationStatus === "filtered") {
-      throw new PublicError(403, "FORBIDDEN", "已过滤留言不能进入直播模式");
+    if (session?.mode === "live" && !["kept", "failed"].includes(item.moderationStatus)) {
+      throw new PublicError(403, "FORBIDDEN", "这条留言暂时不能进入直播模式，请返回列表");
     }
     return { ok: true, item };
   }
 
   async reply(input: {
+    requestKey?: string;
     feedbackId: string;
     requestedType?: StudioReplyType;
     content: string;
@@ -119,12 +97,14 @@ export class StudioService {
   }): Promise<StudioReplyCreateSuccess> {
     const feedback = await this.dependencies.studio.getFeedbackSummary(input.feedbackId);
     if (!feedback) throw new PublicError(404, "NOT_FOUND", "留言不存在");
-    if (input.session.mode === "live" && feedback.moderationStatus === "filtered") {
-      throw new PublicError(403, "FORBIDDEN", "已过滤留言不能在直播模式回复");
+    if (input.session.mode === "live" && !["kept", "failed"].includes(feedback.moderationStatus)) {
+      throw new PublicError(403, "FORBIDDEN", "这条留言暂时不能在直播模式回复");
     }
     const replyType = input.session.mode === "live" ? "live" : input.requestedType;
     if (!replyType) throw new PublicError(400, "VALIDATION_ERROR", "请选择回复方式");
     const result = await this.dependencies.studio.appendReply({
+      requestKey: input.requestKey,
+      liveMode: input.session.mode === "live",
       id: crypto.randomUUID(),
       feedbackId: input.feedbackId,
       replyType,
@@ -221,7 +201,9 @@ export class StudioService {
     }
     const encrypted = await this.dependencies.studio.findEncryptedPhone(userId);
     if (!encrypted) throw new PublicError(404, "NOT_FOUND", "用户不存在");
-    const canonical = await this.dependencies.phoneCrypto.decrypt(
+    const phoneCrypto = typeof this.dependencies.phoneCrypto === "function"
+      ? this.dependencies.phoneCrypto() : this.dependencies.phoneCrypto;
+    const canonical = await phoneCrypto.decrypt(
       encrypted.phoneEncrypted,
       encrypted.phoneHash,
     );
@@ -238,8 +220,9 @@ export class StudioService {
   async newFeedbackCount(
     after: StudioSnapshot,
     topic: Topic | null,
+    readyOnly = false,
   ): Promise<StudioNewFeedbackCountSuccess> {
-    return { ok: true, count: await this.dependencies.studio.countNewFeedback(after, topic) };
+    return { ok: true, count: await this.dependencies.studio.countNewFeedback(after, topic, readyOnly) };
   }
 
   async image(feedbackId: string, imageId: string, session: StudioSessionRecord): Promise<{
@@ -249,7 +232,7 @@ export class StudioService {
   }> {
     if (session.mode === "live") {
       const feedback = await this.dependencies.studio.getFeedbackSummary(feedbackId);
-      if (!feedback || feedback.moderationStatus === "filtered") {
+      if (!feedback || !["kept", "failed"].includes(feedback.moderationStatus)) {
         throw new PublicError(404, "NOT_FOUND", "图片不存在");
       }
     }

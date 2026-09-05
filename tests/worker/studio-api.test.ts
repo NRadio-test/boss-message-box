@@ -3,9 +3,13 @@ import { SELF } from "cloudflare:test";
 import { beforeEach, describe, expect, it } from "vitest";
 import type { Env } from "../../worker/env";
 import { WebCryptoPhoneService } from "../../worker/security/crypto";
+import { hashPassword } from "../../worker/security/password";
 
 const ORIGIN = "https://message.example";
 const testEnv = env as unknown as Env;
+const TEST_PASSWORD = "studio-fixture-password-2026";
+const testPasswordHash = await hashPassword(TEST_PASSWORD);
+const bootstrapAccounts = await testEnv.BOSS_MESSAGE_DB.prepare("SELECT must_change_password FROM admins").all<{ must_change_password: number }>();
 
 async function api(path: string, init: RequestInit = {}): Promise<Response> {
   const headers = new Headers(init.headers);
@@ -14,7 +18,7 @@ async function api(path: string, init: RequestInit = {}): Promise<Response> {
   return SELF.fetch(`${ORIGIN}${path}`, { ...init, headers });
 }
 
-async function login(username = "zd", password = "admin"): Promise<{ response: Response; cookie: string }> {
+async function login(username = "zd", password = TEST_PASSWORD): Promise<{ response: Response; cookie: string }> {
   const response = await api("/api/studio/login", {
     method: "POST",
     body: JSON.stringify({ username, password }),
@@ -85,10 +89,11 @@ describe("Studio API", () => {
       testEnv.BOSS_MESSAGE_DB.prepare("DELETE FROM users"),
       testEnv.BOSS_MESSAGE_DB.prepare("DELETE FROM admin_sessions"),
       testEnv.BOSS_MESSAGE_DB.prepare("DELETE FROM rate_limits"),
+      testEnv.BOSS_MESSAGE_DB.prepare("UPDATE admins SET password_hash = ?, must_change_password = 0").bind(testPasswordHash),
     ]);
   });
 
-  it("authenticates the fixed accounts with a hashed password and a 30-day server session", async () => {
+  it("authenticates initialized accounts with a hashed password and a 30-day server session", async () => {
     const rawTokens: string[] = [];
     for (const username of ["zd", "mm", "fa", "ceshi"]) {
       const { response, cookie } = await login(username);
@@ -170,7 +175,6 @@ describe("Studio API", () => {
     expect(await reveal.json()).toEqual({ ok: true, phone: "13906325777" });
 
     for (const body of [
-      { query: "13906325777", page: 1 },
       { query: "接口测试昵称", page: 1 },
       { query: seeded.feedbackId.slice(0, 8).toUpperCase(), page: 1 },
     ]) {
@@ -259,5 +263,46 @@ describe("Studio API", () => {
     });
     expect(logout.status).toBe(200);
     expect((await api("/api/studio/session", { headers: authenticated })).status).toBe(401);
+  });
+
+  it("blocks bootstrap passwords and revokes all sessions after changing a password", async () => {
+    expect(bootstrapAccounts.results).toHaveLength(4);
+    expect(bootstrapAccounts.results.every((admin) => admin.must_change_password === 1)).toBe(true);
+    await testEnv.BOSS_MESSAGE_DB.prepare("UPDATE admins SET must_change_password = 1 WHERE username = 'zd'").run();
+    expect((await login()).response.status).toBe(403);
+    await testEnv.BOSS_MESSAGE_DB.prepare("UPDATE admins SET must_change_password = 0 WHERE username = 'zd'").run();
+    const first = await login();
+    const second = await login();
+    const request = (currentPassword: string, newPassword: string) => api("/api/studio/password", {
+      method: "POST", headers: { Cookie: first.cookie }, body: JSON.stringify({ currentPassword, newPassword }),
+    });
+    expect((await request("wrong", "next-studio-fixture-password")).status).toBe(400);
+    expect((await request(TEST_PASSWORD, "short")).status).toBe(400);
+    expect((await request(TEST_PASSWORD, "next-studio-fixture-password")).status).toBe(200);
+    for (const cookie of [first.cookie, second.cookie]) {
+      expect((await api("/api/studio/session", { headers: { Cookie: cookie } })).status).toBe(401);
+    }
+    expect((await login("zd", TEST_PASSWORD)).response.status).toBe(401);
+    expect((await login("zd", "next-studio-fixture-password")).response.status).toBe(200);
+  });
+
+  it("disables OTP by default without invoking the old provider", async () => {
+    const response = await api("/api/otp/request", { method: "POST", body: "{}" });
+    expect(response.status).toBe(404);
+    expect(await response.json()).toMatchObject({ error: { code: "NOT_FOUND" } });
+  });
+
+  it("does not display pending moderation in live mode or accept replies before approval", async () => {
+    const seeded = await seedFeedbackWithImage();
+    const { cookie } = await login();
+    const headers = { Cookie: cookie };
+    await testEnv.BOSS_MESSAGE_DB.prepare("UPDATE feedback SET moderation_status = 'pending' WHERE id = ?").bind(seeded.feedbackId).run();
+    await api("/api/studio/session/mode", { method: "PUT", headers, body: JSON.stringify({ mode: "live" }) });
+    expect(await (await api("/api/studio/feedbacks", { headers })).json()).toMatchObject({ items: [] });
+    expect((await api(`/api/studio/feedbacks/${seeded.feedbackId}`, { headers })).status).toBe(403);
+    expect((await api(`/api/studio/feedbacks/${seeded.feedbackId}/images/${seeded.imageId}`, { headers })).status).toBe(404);
+    expect((await api(`/api/studio/feedbacks/${seeded.feedbackId}/replies`, {
+      method: "POST", headers, body: JSON.stringify({ replyType: "live", content: "尚未审核" }),
+    })).status).toBe(403);
   });
 });

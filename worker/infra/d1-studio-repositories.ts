@@ -10,6 +10,7 @@ import {
   type StudioUserDetailSuccess,
 } from "../../src/shared/studio-contracts";
 import type { Topic } from "../../src/shared/contracts";
+import { PublicError } from "../core/errors";
 import type {
   AdminRecord,
   AdminRepository,
@@ -106,10 +107,20 @@ export class D1AdminRepository implements AdminRepository {
 
   async findByUsername(username: string): Promise<AdminRecord | null> {
     const row = await this.db
-      .prepare("SELECT id, username, password_hash FROM admins WHERE username = ? COLLATE NOCASE LIMIT 1")
+      .prepare("SELECT id, username, password_hash, must_change_password FROM admins WHERE username = ? COLLATE NOCASE LIMIT 1")
       .bind(username)
-      .first<{ id: string; username: string; password_hash: string }>();
-    return row ? { id: row.id, username: row.username, passwordHash: row.password_hash } : null;
+      .first<{ id: string; username: string; password_hash: string; must_change_password: number }>();
+    return row ? { id: row.id, username: row.username, passwordHash: row.password_hash, mustChangePassword: Boolean(row.must_change_password) } : null;
+  }
+
+  async changePassword(adminId: string, previousHash: string, nextHash: string, now: number): Promise<boolean> {
+    const results = await this.db.batch([
+      this.db.prepare("UPDATE admins SET password_hash = ?, must_change_password = 0, updated_at = ? WHERE id = ? AND password_hash = ?")
+        .bind(nextHash, now, adminId, previousHash),
+      this.db.prepare("DELETE FROM admin_sessions WHERE admin_id = ? AND EXISTS (SELECT 1 FROM admins WHERE id = ? AND password_hash = ?)")
+        .bind(adminId, adminId, nextHash),
+    ]);
+    return results[0]?.meta.changes === 1;
   }
 
   async recordSuccessfulLogin(adminId: string, now: number): Promise<void> {
@@ -145,7 +156,7 @@ export class D1AdminSessionRepository implements AdminSessionRepository {
         `SELECT session.token_hash, session.mode, session.expires_at, admin.id, admin.username
            FROM admin_sessions session
            JOIN admins admin ON admin.id = session.admin_id
-          WHERE session.token_hash = ? AND session.expires_at > ?
+          WHERE session.token_hash = ? AND session.expires_at > ? AND admin.must_change_password = 0
           LIMIT 1`,
       )
       .bind(tokenHash, now)
@@ -192,7 +203,7 @@ export class D1StudioRepository implements StudioRepository {
   constructor(private readonly db: D1Database) {}
 
   async listFeedbacks(input: StudioListInput): Promise<StudioFeedbackListSuccess> {
-    const filter = viewFilter(input.view);
+    const filter = viewFilter(input.view) + (input.readyOnly ? " AND f.moderation_status IN ('kept', 'failed')" : "");
     return this.listWithFilter(
       input.topic ? `(${filter}) AND f.topic = ?` : filter,
       input.topic ? [input.topic] : [],
@@ -202,6 +213,13 @@ export class D1StudioRepository implements StudioRepository {
   }
 
   async searchFeedbacks(input: StudioSearchInput): Promise<StudioFeedbackListSuccess> {
+    if (input.queryType === "combined") {
+      return this.listWithFilter(
+        "(f.douyin_nickname LIKE ? ESCAPE '\\' OR upper(substr(f.id, 1, 8)) = ?)",
+        [`%${escapeLike(input.queryValue)}%`, input.queryValue.replace(/^#/u, "").toUpperCase()],
+        input.page, input.snapshot,
+      );
+    }
     if (input.queryType === "phone") {
       return this.listWithFilter("u.phone_hash = ?", [input.queryValue], input.page, input.snapshot);
     }
@@ -283,39 +301,53 @@ export class D1StudioRepository implements StudioRepository {
     content: string;
     admin: { id: string; username: string };
     now: number;
+    requestKey?: string;
+    liveMode?: boolean;
   }): Promise<{
     reply: StudioReply;
     replyCount: number;
     latestReplyAdmin: string | null;
   } | null> {
     if (!(await this.feedbackExists(input.feedbackId))) return null;
-    const results = await this.db.batch([
+    await this.db.batch([
       this.db
         .prepare(
-          `INSERT INTO feedback_replies (id, feedback_id, reply_type, content, admin_id, created_at)
-           VALUES (?, ?, ?, ?, ?, ?)`,
+          `INSERT INTO feedback_replies (id, feedback_id, reply_type, content, admin_id, created_at, request_key)
+           SELECT ?, id, ?, ?, ?, ?, ? FROM feedback
+           WHERE id = ? AND (? = 0 OR moderation_status IN ('kept', 'failed'))
+           ON CONFLICT(admin_id, request_key) DO NOTHING`,
         )
-        .bind(input.id, input.feedbackId, input.replyType, input.content, input.admin.id, input.now),
+        .bind(input.id, input.replyType, input.content, input.admin.id, input.now, input.requestKey ?? null, input.feedbackId, input.liveMode ? 1 : 0),
       this.db
-        .prepare("UPDATE feedback SET is_todo = 0, updated_at = ? WHERE id = ?")
-        .bind(input.now, input.feedbackId),
+        .prepare(`UPDATE feedback SET is_todo = 0, updated_at = ?, moderation_attempt_token = NULL,
+           moderation_status = CASE WHEN moderation_status = 'pending' THEN 'kept' ELSE moderation_status END,
+           moderation_source = CASE WHEN moderation_status IN ('pending', 'failed') THEN 'manual' ELSE moderation_source END
+           WHERE id = ? AND EXISTS (SELECT 1 FROM feedback_replies WHERE id = ?)`)
+        .bind(input.now, input.feedbackId, input.id),
       this.db
         .prepare(
           `INSERT INTO audit_logs (id, admin_id, feedback_id, action, created_at)
-           VALUES (?, ?, ?, 'reply_created', ?)`,
+           SELECT ?, ?, ?, 'reply_created', ? WHERE EXISTS (SELECT 1 FROM feedback_replies WHERE id = ?)`,
         )
-        .bind(crypto.randomUUID(), input.admin.id, input.feedbackId, input.now),
+        .bind(crypto.randomUUID(), input.admin.id, input.feedbackId, input.now, input.id),
     ]);
-    if (results[0]?.meta.changes !== 1) return null;
+    const persisted = await this.db.prepare(`SELECT id, feedback_id, reply_type, content, created_at FROM feedback_replies
+      WHERE admin_id = ? AND ${input.requestKey ? "request_key = ?" : "id = ?"} LIMIT 1`)
+      .bind(input.admin.id, input.requestKey ?? input.id)
+      .first<{ id: string; feedback_id: string; reply_type: StudioReplyType; content: string; created_at: number }>();
+    if (!persisted) throw new PublicError(409, "FEEDBACK_NOT_READY", "留言状态已变化，请刷新后重试");
+    if (persisted.feedback_id !== input.feedbackId || persisted.content !== input.content || persisted.reply_type !== input.replyType) {
+      throw new PublicError(409, "REQUEST_CONFLICT", "这次回复请求已使用，请刷新后再试");
+    }
     const summary = await this.getFeedbackSummary(input.feedbackId);
     if (!summary) return null;
     return {
       reply: {
-        id: input.id,
-        replyType: input.replyType,
-        content: input.content,
+        id: persisted.id,
+        replyType: persisted.reply_type,
+        content: persisted.content,
         adminUsername: input.admin.username,
-        createdAt: input.now,
+        createdAt: persisted.created_at,
       },
       replyCount: summary.replyCount,
       latestReplyAdmin: summary.latestReplyAdmin,
@@ -422,10 +454,7 @@ export class D1StudioRepository implements StudioRepository {
       ),
       this.db
         .prepare(
-          `SELECT COUNT(*) AS count FROM (
-             SELECT feedback_id FROM feedback_replies
-             GROUP BY feedback_id HAVING MIN(created_at) >= ?
-           )`,
+          `SELECT COUNT(DISTINCT feedback_id) AS count FROM feedback_replies WHERE created_at >= ?`,
         )
         .bind(todayStartedAt),
     ]);
@@ -442,12 +471,15 @@ export class D1StudioRepository implements StudioRepository {
   async countNewFeedback(
     after: { createdAt: number; id: string },
     topic: Topic | null,
+    readyOnly = false,
   ): Promise<number> {
     const topicFilter = topic ? " AND topic = ?" : "";
     const row = await this.db
       .prepare(
         `SELECT COUNT(*) AS count FROM feedback
           WHERE moderation_status <> 'filtered'
+            AND NOT EXISTS (SELECT 1 FROM feedback_replies WHERE feedback_id = feedback.id)
+            ${readyOnly ? "AND moderation_status IN ('kept', 'failed')" : ""}
             AND (created_at > ? OR (created_at = ? AND id > ?))${topicFilter}`,
       )
       .bind(after.createdAt, after.createdAt, after.id, ...(topic ? [topic] : []))
@@ -495,7 +527,7 @@ export class D1StudioRepository implements StudioRepository {
           `UPDATE feedback
            SET moderation_status = ?, moderation_source = 'manual',
                moderation_category = NULL, moderation_reason = ?, moderated_at = ?,
-               is_todo = 0, updated_at = ?
+               is_todo = 0, updated_at = ?, moderation_attempt_token = NULL
            WHERE id = ?`,
         )
         .bind(
@@ -539,6 +571,7 @@ export class D1StudioRepository implements StudioRepository {
       .prepare(
         `SELECT f.id FROM feedback f
          WHERE (${filter})${topicFilter}
+           AND f.moderation_status IN ('kept', 'failed')
            AND (f.created_at < ? OR (f.created_at = ? AND f.id < ?))
          ORDER BY f.created_at DESC, f.id DESC
          LIMIT 1`,

@@ -9,10 +9,11 @@ import type {
 import type { RateLimitService } from "../core/ports";
 import { sha256 } from "../security/crypto";
 import { bytesToBase64Url, utf8 } from "../security/encoding";
+import { hashPassword } from "../security/password";
 
 const SESSION_SECONDS = 30 * 24 * 60 * 60;
 const DUMMY_PASSWORD_HASH =
-  "pbkdf2-sha256$600000$IRY_0FQTJoY3tz7Fkvo8Mg$onvF3XB3GXlr4_I81BNqMuiuncJtXjXcKVyceVNSWo4";
+  "pbkdf2-sha256$100000$AAAAAAAAAAAAAAAAAAAAAA$AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA";
 
 function createOpaqueToken(): string {
   return bytesToBase64Url(crypto.getRandomValues(new Uint8Array(32)));
@@ -64,6 +65,9 @@ export class StudioAuthService {
     if (!admin || !valid) {
       throw new PublicError(401, "AUTH_FAILED", "账号或密码错误");
     }
+    if (admin.mustChangePassword) {
+      throw new PublicError(403, "PASSWORD_SETUP_REQUIRED", "账号需要设置新密码，请联系管理员初始化");
+    }
 
     const token = createOpaqueToken();
     const tokenHash = await this.hashToken(token);
@@ -96,6 +100,20 @@ export class StudioAuthService {
     return session;
   }
 
+  async changePassword(input: { session: StudioSessionRecord; currentPassword: string; newPassword: string; now: number }): Promise<void> {
+    const limit = await this.dependencies.rateLimits.consume({
+      operation: "studio-password-change", identity: input.session.admin.id,
+      limit: 5, windowSeconds: 900, now: input.now,
+    });
+    if (!limit.allowed) throw new PublicError(429, "RATE_LIMITED", "尝试较频繁，请稍后再试");
+    const admin = await this.dependencies.admins.findByUsername(input.session.admin.username);
+    if (!admin || !(await this.dependencies.passwords.verify(input.currentPassword, admin.passwordHash))) {
+      throw new PublicError(400, "AUTH_FAILED", "当前密码不正确");
+    }
+    const changed = await this.dependencies.admins.changePassword(admin.id, admin.passwordHash, await hashPassword(input.newPassword), input.now);
+    if (!changed) throw new PublicError(409, "PASSWORD_CHANGED", "密码已被修改，请重新登录");
+  }
+
   async logout(token: string | undefined): Promise<void> {
     if (!token || !/^[A-Za-z0-9_-]{43}$/u.test(token)) return;
     await this.dependencies.sessions.delete(await this.hashToken(token));
@@ -115,4 +133,3 @@ export class StudioAuthService {
     return sha256(utf8(token).buffer);
   }
 }
-

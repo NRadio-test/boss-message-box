@@ -6,9 +6,27 @@ import {
   loadDraftImages,
   saveDraft,
   saveDraftImage,
+  markDraftSubmitted,
 } from "../../src/features/feedback/draft-store";
 
 describe("local draft storage", () => {
+  it("never restores or re-saves a completed draft", () => {
+    const draft = { ...EMPTY_DRAFT(), content: "已提交" };
+    saveDraft(draft);
+    markDraftSubmitted(draft.submissionKey);
+    expect(loadDraft()).toBeNull();
+    expect(saveDraft(draft)).toBe(false);
+  });
+
+  it("scopes images to a draft and adopts legacy images only when requested", async () => {
+    const image = { id: "scoped", blob: new Blob(["image"]), name: "test.webp", width: 1, height: 1, byteSize: 5 };
+    await saveDraftImage(image);
+    expect(await loadDraftImages("new-draft")).toHaveLength(0);
+    expect(await loadDraftImages("original-draft", true)).toHaveLength(1);
+    expect(await loadDraftImages("new-draft")).toHaveLength(0);
+    await clearDraftImages("new-draft");
+    expect(await loadDraftImages("original-draft")).toHaveLength(1);
+  });
   beforeEach(async () => {
     await clearDraftImages().catch(() => undefined);
   });

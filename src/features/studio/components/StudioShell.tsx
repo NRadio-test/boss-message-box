@@ -3,6 +3,7 @@ import {
   CaretDown,
   CheckCircle,
   ListChecks,
+  LockKey,
   MagnifyingGlass,
   ShieldWarning,
   SignOut,
@@ -63,6 +64,7 @@ function StudioNavigation({ afterNavigate }: { afterNavigate?: () => void }) {
       <NavLink to="/studio/filtered"><ShieldWarning aria-hidden="true" weight="bold" />AI 已过滤</NavLink>
       <span className="studio-nav-label">处理</span>
       <NavLink to="/studio/todo"><ListChecks aria-hidden="true" weight="bold" />待办</NavLink>
+      <NavLink to="/studio/password"><LockKey aria-hidden="true" weight="bold" />修改密码</NavLink>
     </nav>
   );
 }
@@ -246,12 +248,12 @@ export function StudioShell() {
         <header className="studio-toolbar">
           <form className="studio-search" role="search" onSubmit={submitSearch}>
             <MagnifyingGlass aria-hidden="true" />
-            <label className="sr-only" htmlFor="studio-search">搜索抖音昵称、留言编号或旧手机号</label>
+            <label className="sr-only" htmlFor="studio-search">搜索抖音昵称或留言编号</label>
             <input
               id="studio-search"
               value={search}
               maxLength={100}
-              placeholder="搜索抖音昵称 / 留言编号（兼容旧手机号）"
+              placeholder="搜索抖音昵称 / 留言编号"
               onChange={(event) => setSearch(event.target.value)}
             />
             <button type="submit">搜索</button>

@@ -9,6 +9,10 @@ export default defineConfig({
         bindings: {
           TEST_MIGRATIONS: await readD1Migrations("./migrations"),
           APP_ENV: "test",
+          AI_API_KEY: "",
+          AI_BASE_URL: "https://ai.example.test",
+          AI_MODEL: "test-model",
+          OTP_ENABLED: "false",
           SMS_PROVIDER: "mock",
           TURNSTILE_SITE_KEY: "1x00000000000000000000AA",
           TURNSTILE_SECRET_KEY: "1x0000000000000000000000000000000AA",

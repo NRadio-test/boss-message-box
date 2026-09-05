@@ -47,14 +47,30 @@ export interface FeedbackRepository {
   ): Promise<{ feedbackId: string; createdAt: number } | null>;
   hasReachedDailyLimit(nickname: string, beijingDay: string): Promise<boolean>;
   create(input: CreateFeedbackInput): Promise<CreateFeedbackResult>;
-  findHistory(nickname: string): Promise<PublicFeedback[] | null>;
+  findHistory(nickname: string, before?: { createdAt: number; id: string }): Promise<PublicFeedback[] | null>;
   setModerationResult(input: {
     feedbackId: string;
+    attemptToken: string;
     status: "kept" | "filtered" | "failed";
     category: "valid_feedback" | "abusive" | "meaningless" | "uncertain" | null;
     reason: string | null;
     now: number;
+    nextRetryAt?: number;
   }): Promise<void>;
+}
+
+export interface ModerationJob {
+  feedbackId: string;
+  attemptToken: string;
+  attempts: number;
+  topic: string;
+  content: string;
+}
+
+export interface ModerationJobRepository {
+  claim(input: { feedbackId: string; now: number; manual?: boolean }): Promise<ModerationJob | null>;
+  listDue(now: number, limit: number): Promise<string[]>;
+  expireExhausted(now: number): Promise<void>;
 }
 
 export interface AiModerationDecision {

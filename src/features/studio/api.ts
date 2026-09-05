@@ -17,6 +17,7 @@ import type {
   StudioUserDetailSuccess,
 } from "../../shared/studio-contracts";
 import type { Topic } from "../../shared/contracts";
+import { requestJson } from "../../lib/request";
 
 interface ErrorResponse {
   error?: { message?: string; fieldErrors?: Record<string, string>; retryAfterSeconds?: number };
@@ -37,13 +38,12 @@ export class StudioApiError extends Error {
 async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
   const headers = new Headers(init.headers);
   headers.set("Accept", "application/json");
-  const response = await fetch(path, {
+  const { response, body } = await requestJson<T | ErrorResponse>(path, {
     ...init,
     headers,
     credentials: "same-origin",
     cache: "no-store",
   });
-  const body = (await response.json().catch(() => null)) as T | ErrorResponse | null;
   if (!response.ok || !body) {
     if (response.status === 401) window.dispatchEvent(new Event("studio:unauthorized"));
     const error = body && typeof body === "object" && "error" in body ? body.error : undefined;
@@ -53,6 +53,10 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
       error?.fieldErrors,
       error?.retryAfterSeconds,
     );
+  }
+  if ((init.method === "POST" || init.method === "PUT" || init.method === "DELETE") &&
+      /\/feedbacks\/[^/]+\/(replies|todo|moderation)$/.test(path)) {
+    window.dispatchEvent(new Event("studio:changed"));
   }
   return body as T;
 }
@@ -121,10 +125,11 @@ export function createStudioReply(
   feedbackId: string,
   content: string,
   replyType?: StudioReplyType,
+  requestKey?: string,
 ): Promise<StudioReplyCreateSuccess> {
   return request(
     `/api/studio/feedbacks/${encodeURIComponent(feedbackId)}/replies`,
-    jsonInit("POST", { content, ...(replyType ? { replyType } : {}) }),
+    jsonInit("POST", { content, ...(replyType ? { replyType } : {}), ...(requestKey ? { requestKey } : {}) }),
   );
 }
 
@@ -143,6 +148,10 @@ export function updateStudioModeration(
     `/api/studio/feedbacks/${encodeURIComponent(feedbackId)}/moderation`,
     jsonInit("PUT", { filtered }),
   );
+}
+
+export function retryStudioModeration(feedbackId: string): Promise<{ ok: true }> {
+  return request(`/api/studio/feedbacks/${encodeURIComponent(feedbackId)}/retry-moderation`, jsonInit("POST", {}));
 }
 
 export function getNextStudioFeedback(

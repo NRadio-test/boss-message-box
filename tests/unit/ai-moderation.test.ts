@@ -1,6 +1,6 @@
 // @vitest-environment node
 import { afterEach, describe, expect, it, vi } from "vitest";
-import type { AiModerationProvider, FeedbackRepository } from "../../worker/core/ports";
+import type { AiModerationProvider, FeedbackRepository, ModerationJobRepository } from "../../worker/core/ports";
 import { OpenAICompatibleModerationProvider } from "../../worker/providers/ai-moderation";
 import { AiModerationService } from "../../worker/services/ai-moderation-service";
 
@@ -14,6 +14,10 @@ function repository(): FeedbackRepository {
     findHistory: vi.fn(),
     setModerationResult: vi.fn(),
   };
+}
+
+function jobs(): ModerationJobRepository {
+  return { claim: vi.fn().mockResolvedValue({ feedbackId: "feedback-id", attemptToken: "attempt-token", attempts: 1, topic: "appeal", content: "这是不能出现在日志里的留言" }), listDue: vi.fn().mockResolvedValue([]), expireExhausted: vi.fn() };
 }
 
 describe("OpenAI-compatible AI moderation", () => {
@@ -48,7 +52,7 @@ describe("OpenAI-compatible AI moderation", () => {
       model: "deepseek-v4-flash",
       stream: false,
     });
-    expect(requestBody).not.toHaveProperty("response_format");
+    expect(requestBody).toMatchObject({ thinking: { type: "disabled" }, max_tokens: 512, response_format: { type: "json_object" } });
     expect(requestBody.messages[0]?.content).toContain("Negative, angry, critical");
     expect(requestBody.messages[0]?.content).toContain("鲲鹏产品就是傻逼");
     expect(requestBody.messages[0]?.content).toContain("这个破产品散热太垃圾了，每天都死机");
@@ -61,21 +65,21 @@ describe("OpenAI-compatible AI moderation", () => {
       classify: vi.fn().mockRejectedValue(new Error("provider unavailable")),
     };
     const warning = vi.spyOn(console, "warn").mockImplementation(() => undefined);
-    const service = new AiModerationService({ provider, feedback });
+    const service = new AiModerationService({ provider, feedback, jobs: jobs(), now: () => 123 });
 
     await service.moderate({
       feedbackId: "feedback-id",
-      topic: "appeal",
-      content: "这是不能出现在日志里的留言",
       now: 123,
     });
 
     expect(feedback.setModerationResult).toHaveBeenCalledExactlyOnceWith({
       feedbackId: "feedback-id",
+      attemptToken: "attempt-token",
       status: "failed",
       category: null,
       reason: "provider_error",
       now: 123,
+      nextRetryAt: 60_123,
     });
     expect(JSON.stringify(warning.mock.calls)).not.toContain("这是不能出现在日志里的留言");
   });
@@ -89,11 +93,12 @@ describe("OpenAI-compatible AI moderation", () => {
     const service = new AiModerationService({
       provider: new OpenAICompatibleModerationProvider("https://api.example", "test-key", "model"),
       feedback,
+      jobs: jobs(),
     });
 
-    await service.moderate({ feedbackId: "feedback-id", topic: "appeal", content: "正常提交", now: 456 });
+    await service.moderate({ feedbackId: "feedback-id", now: 456 });
     expect(feedback.setModerationResult).toHaveBeenCalledWith(
-      expect.objectContaining({ status: "failed", reason: "provider_error" }),
+      expect.objectContaining({ status: "failed", reason: "invalid_response" }),
     );
   });
 
@@ -109,7 +114,23 @@ describe("OpenAI-compatible AI moderation", () => {
     );
 
     await expect(provider.classify({ topic: "appeal", content: "正常提交" })).rejects.toMatchObject({
-      name: "AbortError",
+      code: "timeout",
     });
+  });
+
+  it.each([[401, "authentication_error"], [429, "rate_limited"], [503, "upstream_unavailable"]])("classifies HTTP %i without exposing upstream text", async (status, code) => {
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response("private upstream data", { status: Number(status) }));
+    const provider = new OpenAICompatibleModerationProvider("https://api.example", "test-key", "test-model");
+    await expect(provider.classify({ topic: "appeal", content: "正文" })).rejects.toMatchObject({ code, message: code });
+  });
+
+  it("does not call the provider when a job is already claimed or manually handled", async () => {
+    const queue = jobs();
+    vi.mocked(queue.claim).mockResolvedValue(null);
+    const provider = { classify: vi.fn() };
+    const feedback = repository();
+    await new AiModerationService({ provider, feedback, jobs: queue }).moderate({ feedbackId: "feedback-id", now: 1 });
+    expect(provider.classify).not.toHaveBeenCalled();
+    expect(feedback.setModerationResult).not.toHaveBeenCalled();
   });
 });

@@ -69,6 +69,17 @@ function setup() {
 }
 
 describe("nickname submission limits", () => {
+  it("returns a bounded history page and a cursor, then allows an empty last page", async () => {
+    const { feedback, service } = setup();
+    const items = Array.from({ length: 31 }, (_, index) => ({ id: crypto.randomUUID(), topic: "appeal" as const, customTopic: null, content: `留言${index}`, imageCount: 0, status: "unreplied" as const, replies: [], replyContent: null, createdAt: now - index }));
+    vi.mocked(feedback.findHistory).mockResolvedValueOnce(items).mockResolvedValueOnce(null);
+    const first = await service.history({ nickname: "测试昵称" });
+    expect(first.items).toHaveLength(30);
+    expect(first.nextCursor).toEqual({ id: items[29]!.id, createdAt: items[29]!.createdAt });
+    const before = first.nextCursor!;
+    expect(await service.history({ nickname: "测试昵称", before })).toEqual({ ok: true, items: [], nextCursor: null });
+    expect(feedback.findHistory).toHaveBeenLastCalledWith("测试昵称", before);
+  });
   it("submits without phone or OTP and accounts against the Beijing calendar day", async () => {
     const { feedback, service, turnstile } = setup();
 
@@ -153,7 +164,9 @@ describe("feedback upload acceptance boundaries", () => {
 
     expect(images.putPrivate).toHaveBeenCalledTimes(2);
     const uploadedKey = vi.mocked(images.putPrivate).mock.calls[0]![0];
-    expect(images.delete).toHaveBeenCalledExactlyOnceWith(uploadedKey);
+    expect(images.delete).toHaveBeenCalledTimes(2);
+    expect(images.delete).toHaveBeenCalledWith(uploadedKey);
+    expect(images.delete).toHaveBeenCalledWith(vi.mocked(images.putPrivate).mock.calls[1]![0]);
     expect(imageCleanup.enqueue).not.toHaveBeenCalled();
     expect(feedback.create).not.toHaveBeenCalled();
   });

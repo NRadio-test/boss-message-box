@@ -53,6 +53,9 @@ export function FeedbackCard({
           {item.moderationStatus === "failed" && (
             <span className="studio-moderation-failed">AI 筛选失败</span>
           )}
+          {item.moderationStatus === "pending" && (
+            <span>等待 AI 筛选</span>
+          )}
           <code>#{item.feedbackNumber}</code>
         </div>
         <dl className="studio-card-fields">

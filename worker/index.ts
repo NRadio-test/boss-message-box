@@ -20,13 +20,14 @@ import {
   D1UserRepository,
 } from "./infra/d1-repositories";
 import { R2ImageStorage } from "./infra/r2-image-storage";
-import { createAiModerationProvider } from "./providers/ai-moderation";
 import { createSmsProvider, resolveDevelopmentOtpCode } from "./providers/sms";
 import { CloudflareTurnstileVerifier } from "./providers/turnstile";
 import { studioRoutes } from "./routes/studio";
 import { WebCryptoPhoneService } from "./security/crypto";
+import { readFeedbackForm } from "./security/feedback-body";
 import { FeedbackService } from "./services/feedback-service";
-import { AiModerationService } from "./services/ai-moderation-service";
+import type { AiModerationService } from "./services/ai-moderation-service";
+import { createAiModerationService } from "./services/moderation-factory";
 import { ImageCleanupService } from "./services/image-cleanup-service";
 import { OtpService } from "./services/otp-service";
 
@@ -90,14 +91,7 @@ function createFeedbackServices(env: Env): {
       privacyPolicyVersion: env.PRIVACY_POLICY_VERSION,
       livestreamPolicyVersion: env.LIVESTREAM_POLICY_VERSION,
     }),
-    moderation: new AiModerationService({
-      feedback: repository,
-      provider: createAiModerationProvider({
-        baseUrl: env.AI_BASE_URL,
-        apiKey: env.AI_API_KEY,
-        model: env.AI_MODEL,
-      }),
-    }),
+    moderation: createAiModerationService(env),
   };
 }
 
@@ -112,6 +106,9 @@ app.get("/api/config", (context) =>
 app.get("/api/health", (context) => context.json({ ok: true }));
 
 app.post("/api/otp/request", async (context) => {
+  if (context.env.OTP_ENABLED !== "true") {
+    throw new PublicError(404, "NOT_FOUND", "接口未启用");
+  }
   const parsed = otpRequestSchema.safeParse(await context.req.json().catch(() => null));
   if (!parsed.success) {
     throw new PublicError(400, "VALIDATION_ERROR", "请检查填写内容", {
@@ -131,10 +128,10 @@ app.post("/api/feedback", async (context) => {
   if (!contentType.startsWith("multipart/form-data")) {
     throw new PublicError(400, "VALIDATION_ERROR", "提交格式无效");
   }
-  const formData = await context.req.formData().catch(() => null);
+  const formData = await readFeedbackForm(context.req.raw);
   const rawPayload = formData?.get("payload");
   let payload: unknown = null;
-  if (typeof rawPayload === "string") {
+  if (typeof rawPayload === "string" && rawPayload.length <= 16_384) {
     try {
       payload = JSON.parse(rawPayload);
     } catch {
@@ -162,8 +159,6 @@ app.post("/api/feedback", async (context) => {
     context.executionCtx.waitUntil(
       moderation.moderate({
         feedbackId: result.feedbackId,
-        topic: parsed.data.topic === "other" ? parsed.data.customTopic ?? "其他" : parsed.data.topic,
-        content: parsed.data.content,
         now: Date.now(),
       }),
     );
@@ -209,16 +204,26 @@ app.onError((error, context) => {
 
 export default {
   fetch: app.fetch,
-  scheduled(_controller, env, context) {
+  scheduled(controller, env, context) {
     const cleanup = new ImageCleanupService(
       new D1ImageCleanupRepository(env.BOSS_MESSAGE_DB),
       new R2ImageStorage(env.BOSS_MESSAGE_IMAGES),
     );
     const now = Date.now();
+    const maintenanceDue = controller.scheduledTime % (15 * 60_000) < 60_000;
     context.waitUntil(
       Promise.all([
-        cleanup.run(now),
-        new D1AdminSessionRepository(env.BOSS_MESSAGE_DB).deleteExpired(now),
+        createAiModerationService(env).recover(now),
+        ...(maintenanceDue ? [
+          cleanup.run(now),
+          new D1AdminSessionRepository(env.BOSS_MESSAGE_DB).deleteExpired(now),
+          new D1RateLimitService(env.BOSS_MESSAGE_DB, env.RATE_LIMIT_HMAC_KEY).deleteExpired(now),
+          env.BOSS_MESSAGE_DB.batch([
+            env.BOSS_MESSAGE_DB.prepare("DELETE FROM nickname_daily_limits WHERE updated_at < ? AND beijing_day < ?")
+              .bind(now - 30 * 86_400_000, new Date(now - 30 * 86_400_000 + 8 * 3_600_000).toISOString().slice(0, 10)),
+            env.BOSS_MESSAGE_DB.prepare("DELETE FROM otp_challenges WHERE expires_at < ?").bind(now - 86_400_000),
+          ]),
+        ] : []),
       ]).then(() => undefined),
     );
   },

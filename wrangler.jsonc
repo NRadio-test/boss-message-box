@@ -26,17 +26,19 @@
     "binding": "IMAGES"
   },
   "triggers": {
-    "crons": ["*/15 * * * *"]
+    "crons": ["* * * * *"]
   },
   "vars": {
     "APP_ENV": "production",
     "SMS_PROVIDER": "alibaba_pnvs",
+    "OTP_ENABLED": "false",
     "TURNSTILE_SITE_KEY": "0x4AAAAAAEliU6CJbO1itIy3",
     "TURNSTILE_EXPECTED_HOSTNAMES": "message.fallaxaura.com",
-    "PRIVACY_POLICY_VERSION": "2026-09-03",
-    "LIVESTREAM_POLICY_VERSION": "2026-09-03",
+    "PRIVACY_POLICY_VERSION": "2026-09-05",
+    "LIVESTREAM_POLICY_VERSION": "2026-09-05",
     "AI_BASE_URL": "https://api.deepseek.com",
-    "AI_MODEL": "deepseek-v4-flash"
+    "AI_MODEL": "deepseek-v4-flash",
+    "AI_THINKING": "disabled"
   },
   "observability": {
     "enabled": true,

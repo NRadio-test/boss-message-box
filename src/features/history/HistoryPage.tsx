@@ -1,5 +1,5 @@
 import { ChatCircleText, Clock, ImageSquare, MagnifyingGlass } from "@phosphor-icons/react";
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { Button } from "../../components/Button";
 import { FormField } from "../../components/FormField";
 import { ApiClientError, queryHistory } from "../../lib/api";
@@ -23,9 +23,13 @@ export function HistoryPage() {
   const [message, setMessage] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [items, setItems] = useState<PublicFeedback[] | null>(null);
+  const [nextCursor, setNextCursor] = useState<{ createdAt: number; id: string } | null>(null);
+  const [queriedNickname, setQueriedNickname] = useState("");
+  const busy = useRef(false);
 
-  const submit = async () => {
-    const parsed = historyQuerySchema.safeParse({ nickname });
+  const submit = async (more = false) => {
+    if (busy.current) return;
+    const parsed = historyQuerySchema.safeParse({ nickname: more ? queriedNickname : nickname, ...(more && nextCursor ? { before: nextCursor } : {}) });
     if (!parsed.success) {
       const nextErrors: Record<string, string> = {};
       for (const issue of parsed.error.issues) nextErrors[String(issue.path[0])] = issue.message;
@@ -38,11 +42,14 @@ export function HistoryPage() {
     setErrors({});
     setMessage(null);
     setLoading(true);
+    busy.current = true;
     try {
       const result = await queryHistory(parsed.data);
-      setItems(result.items);
+      setItems((previous) => more ? [...(previous ?? []), ...result.items.filter((item) => !previous?.some((existing) => existing.id === item.id))] : result.items);
+      setNextCursor(result.nextCursor ?? null);
+      setQueriedNickname(parsed.data.nickname);
     } catch (error) {
-      setItems(null);
+      if (!more) { setItems(null); setNextCursor(null); }
       setMessage(
         error instanceof ApiClientError || error instanceof Error
           ? error.message
@@ -50,6 +57,7 @@ export function HistoryPage() {
       );
     } finally {
       setLoading(false);
+      busy.current = false;
     }
   };
 
@@ -58,7 +66,7 @@ export function HistoryPage() {
       <section className="page-intro">
         <div className="signal-caption"><span /> 留言回执</div>
         <h1>查看我的留言</h1>
-        <p>输入提交留言时使用的抖音昵称，即可查看同名下的全部留言。</p>
+        <p>输入提交时使用的抖音昵称，即可查看同名留言。这不是身份验证，同名用户也能查询，请勿提交敏感信息。</p>
       </section>
       <form className="history-query" noValidate onSubmit={(event) => { event.preventDefault(); void submit(); }}>
         <FormField label="抖音昵称" htmlFor="history-nickname" required error={errors.nickname}>
@@ -66,6 +74,7 @@ export function HistoryPage() {
             id="history-nickname"
             required
             value={nickname}
+            disabled={loading}
             maxLength={40}
             autoComplete="nickname"
             enterKeyHint="search"
@@ -82,7 +91,7 @@ export function HistoryPage() {
 
       {items && (
         <section className="history-results" aria-live="polite">
-          <div className="results-heading"><h2>共 {items.length} 条留言</h2><span>按提交时间从新到旧</span></div>
+          <div className="results-heading"><h2>{nextCursor ? "已加载" : "共"} {items.length} 条留言</h2><span>按提交时间从新到旧</span></div>
           <ol>
             {items.map((item) => (
               <li key={item.id} className="message-card">
@@ -111,6 +120,7 @@ export function HistoryPage() {
               </li>
             ))}
           </ol>
+          {nextCursor && <Button type="button" loading={loading} onClick={() => void submit(true)}>加载更多留言</Button>}
         </section>
       )}
     </div>

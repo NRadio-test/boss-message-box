@@ -18,6 +18,7 @@ const QUERY_TYPE_LABELS = {
   phone: "手机号",
   feedback_number: "留言编号",
   nickname: "抖音昵称",
+  combined: "抖音昵称 / 留言编号",
 } as const;
 
 export function SearchPage() {
@@ -48,6 +49,7 @@ export function SearchPage() {
     const controller = new AbortController();
     searchStudioFeedbacks(query, page, snapshot, controller.signal)
       .then((value) => {
+        if (controller.signal.aborted) return;
         if (!snapshot) {
           setSnapshots((current) => ({ ...current, [query]: value.snapshot }));
         }
@@ -67,7 +69,7 @@ export function SearchPage() {
         }
       });
     return () => controller.abort();
-  }, [page, query, reload, snapshot, state?.restoreContext]);
+  }, [liveMode, page, query, reload, snapshot, state?.restoreContext]);
 
   const toggleTodo = async (item: StudioFeedbackSummary) => {
     setTodoBusy(item.id);
@@ -102,7 +104,7 @@ export function SearchPage() {
   return (
     <div className="studio-page">
       <header className="studio-page-heading">
-        <div><span className="studio-kicker">统一搜索</span><h1>搜索结果</h1><p>系统会自动识别手机号、留言编号或抖音昵称。</p></div>
+        <div><span className="studio-kicker">统一搜索</span><h1>搜索结果</h1><p>按抖音昵称或留言编号查找，纯数字昵称也可以搜索。</p></div>
         {result && <span className="studio-total">共 {result.pagination.total} 条</span>}
       </header>
 

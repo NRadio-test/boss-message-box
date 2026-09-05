@@ -28,6 +28,7 @@ import {
   EMPTY_DRAFT,
   loadDraft,
   loadDraftImages,
+  markDraftSubmitted,
   saveDraft,
   saveDraftImage,
   saveIdentity,
@@ -73,42 +74,68 @@ export function FeedbackForm({ config }: { config: PublicConfig }) {
   const turnstileRef = useRef<TurnstileHandle>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const imagesRef = useRef<LocalImage[]>([]);
+  const mounted = useRef(true);
+  const submitted = useRef(false);
+  const submittingRef = useRef(false);
+  const imageGeneration = useRef(0);
+  const compressionController = useRef<AbortController | null>(null);
+  const submissionController = useRef<AbortController | null>(null);
+  const draftRef = useRef(draft);
+  const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const locked = submitting || Boolean(draft.submissionPending);
 
   useEffect(() => {
     let alive = true;
-    loadDraftImages()
+    mounted.current = true;
+    const generation = imageGeneration.current;
+    const recovery = initialDraft?.imagesEnabled ? loadDraftImages(initialDraft.submissionKey, initialDraft.imagesVersion !== 2) : Promise.resolve([]);
+    recovery
       .then((stored) => {
-        if (!alive) return;
-        setImages(
-          stored.slice(0, 3).map((image) => ({
+        if (!alive || generation !== imageGeneration.current) return;
+        const restored = stored.slice(0, 3).map((image) => ({
             ...image,
             previewUrl: URL.createObjectURL(image.blob),
-          })),
-        );
+          }));
+        imagesRef.current = restored;
+        setImages(restored);
+        setDraft((current) => ({ ...current, imagesVersion: 2 }));
       })
-      .catch(() => setImageMessage("本地图片草稿暂时无法恢复，请重新选择图片"))
+      .catch(() => alive && setImageMessage("本地图片草稿暂时无法恢复，请重新选择图片"))
       .finally(() => alive && setHydrated(true));
     return () => {
       alive = false;
+      mounted.current = false;
+      imageGeneration.current += 1;
+      compressionController.current?.abort();
+      submissionController.current?.abort();
+      if (saveTimer.current) clearTimeout(saveTimer.current);
+      imagesRef.current.forEach((image) => URL.revokeObjectURL(image.previewUrl));
+    };
+  }, [initialDraft]);
+
+  useEffect(() => {
+    draftRef.current = draft;
+    if (!hydrated) return;
+    saveTimer.current = setTimeout(() => {
+      if (!submitted.current) saveDraft(draft);
+    }, 240);
+    return () => { if (saveTimer.current) clearTimeout(saveTimer.current); };
+  }, [draft, hydrated]);
+
+  useEffect(() => {
+    const flush = () => { if (!submitted.current) saveDraft(draftRef.current); };
+    const onVisibility = () => { if (document.visibilityState === "hidden") flush(); };
+    window.addEventListener("pagehide", flush);
+    document.addEventListener("visibilitychange", onVisibility);
+    return () => {
+      window.removeEventListener("pagehide", flush);
+      document.removeEventListener("visibilitychange", onVisibility);
+      flush();
     };
   }, []);
 
-  useEffect(() => {
-    imagesRef.current = images;
-  }, [images]);
-
-  useEffect(
-    () => () => imagesRef.current.forEach((image) => URL.revokeObjectURL(image.previewUrl)),
-    [],
-  );
-
-  useEffect(() => {
-    if (!hydrated) return;
-    const timeout = setTimeout(() => saveDraft(draft), 240);
-    return () => clearTimeout(timeout);
-  }, [draft, hydrated]);
-
   const update = <Key extends keyof DraftState>(key: Key, value: DraftState[Key]) => {
+    if (submittingRef.current || submitted.current || draft.submissionPending) return;
     setDraft((current) => ({ ...current, [key]: value, updatedAt: Date.now() }));
     setErrors((current) => {
       if (!current[key]) return current;
@@ -137,12 +164,33 @@ export function FeedbackForm({ config }: { config: PublicConfig }) {
   };
 
   const submit = async () => {
+    if (submittingRef.current || submitted.current) return;
+    if (!hydrated || compressionController.current) {
+      setFormMessage(!hydrated ? "正在恢复草稿，请稍候" : "图片还在处理中，请处理完成后再提交");
+      return;
+    }
     const fields = validatedFields();
     if (!fields) return;
+    if (draft.submissionPending && (draft.submissionImageCount ?? 0) !== images.length) {
+      setFormMessage("上次提交的图片草稿无法完整恢复，请先到“我的留言”核对是否已提交。核对后可点击下方重新填写。");
+      return;
+    }
+    submittingRef.current = true;
+    const controller = new AbortController();
+    submissionController.current = controller;
     setSubmitting(true);
     setFormMessage(null);
+    let sent = false;
     try {
-      const turnstileToken = await turnstileRef.current!.getToken();
+      const verifier = turnstileRef.current;
+      if (!verifier) throw new Error("安全验证仍在加载，请稍后再试");
+      const turnstileToken = await verifier.getToken();
+      controller.signal.throwIfAborted();
+      const pending = { ...draft, submissionPending: true, submissionImageCount: draft.imagesEnabled ? images.length : 0 };
+      draftRef.current = pending;
+      setDraft(pending);
+      saveDraft(pending);
+      sent = true;
       const result = await submitFeedback(
         { ...fields, turnstileToken },
         draft.imagesEnabled
@@ -150,94 +198,132 @@ export function FeedbackForm({ config }: { config: PublicConfig }) {
               new File([image.blob], "image-" + String(index + 1) + ".webp", { type: "image/webp" }),
             )
           : [],
+        controller.signal,
       );
-      saveIdentity(fields.nickname);
-      clearDraftFields();
-      await clearDraftImages();
-      images.forEach((image) => URL.revokeObjectURL(image.previewUrl));
+      // Once the server confirms receipt, optional browser cleanup cannot undo it.
+      submitted.current = true;
+      if (saveTimer.current) clearTimeout(saveTimer.current);
+      markDraftSubmitted(fields.submissionKey);
+      try { saveIdentity(fields.nickname); } catch { /* Optional browser storage. */ }
+      try { clearDraftFields(); } catch { /* The completed key prevents stale recovery. */ }
+      try { void clearDraftImages(fields.submissionKey).catch(() => undefined); } catch { /* Optional cleanup. */ }
+      if (!mounted.current) return;
       navigate("/success", { replace: true, state: result });
     } catch (error) {
+      if (!mounted.current || controller.signal.aborted || submitted.current) return;
+      const definitive = error instanceof ApiClientError && !["SUBMISSION_FAILED", "SERVER_ERROR"].includes(error.body.error.code);
+      if (sent && definitive) {
+        const editable = { ...draft, submissionPending: false };
+        draftRef.current = editable;
+        setDraft(editable);
+        saveDraft(editable);
+      }
       if (error instanceof ApiClientError && error.body.error.fieldErrors) {
         setErrors(error.body.error.fieldErrors);
       }
       setFormMessage(error instanceof Error ? error.message : "提交失败，请稍后重试");
     } finally {
       turnstileRef.current?.reset();
-      setSubmitting(false);
+      submittingRef.current = false;
+      submissionController.current = null;
+      if (mounted.current && !submitted.current) setSubmitting(false);
     }
   };
 
   const addImages = async (files: FileList | null) => {
-    if (!files?.length) return;
-    const available = 3 - images.length;
+    if (!files?.length || !hydrated || !draft.imagesEnabled || compressionController.current || submittingRef.current || draft.submissionPending) return;
+    const available = 3 - imagesRef.current.length;
     if (available <= 0) {
       setImageMessage("每次留言最多上传 3 张图片");
       return;
     }
     const selected = Array.from(files).slice(0, available);
+    const generation = ++imageGeneration.current;
+    const controller = new AbortController();
+    compressionController.current = controller;
+    const active = () => mounted.current && generation === imageGeneration.current && !controller.signal.aborted;
     setImageMessage(files.length > available ? "只添加了前 " + available + " 张图片，每次最多 3 张" : null);
     setCompressing(selected.length);
-    const results = await Promise.all(
-      selected.map(async (file) => {
+    try {
+      for (const [index, file] of selected.entries()) {
+        if (!active()) break;
         try {
-          return { status: "fulfilled" as const, value: await compressImage(file) };
-        } catch (reason) {
-          return { status: "rejected" as const, reason };
+          const result = await compressImage(file, controller.signal);
+          if (!active()) break;
+          const image: LocalImage = {
+            id: createRandomUuid(),
+            submissionKey: draft.submissionKey,
+            blob: result.blob,
+            name: "draft-" + createRandomUuid() + ".webp",
+            width: result.width,
+            height: result.height,
+            byteSize: result.blob.size,
+            previewUrl: URL.createObjectURL(result.blob),
+          };
+          imagesRef.current = [...imagesRef.current, image];
+          setImages(imagesRef.current);
+          try { await saveDraftImage(image); } catch {
+            if (active()) setImageMessage("本地草稿无法保存，图片仍可正常提交；离开页面后需重新选择");
+          }
+          if (!active()) void deleteDraftImage(image.id).catch(() => undefined);
+        } catch (error) {
+          if (active()) setImageMessage(error instanceof Error ? error.message : "有一张图片处理失败");
         }
-      }),
-    );
-    const added: LocalImage[] = [];
-    for (const result of results) {
-      if (result.status === "rejected") {
-        setImageMessage(result.reason instanceof Error ? result.reason.message : "有一张图片处理失败");
-        continue;
+        if (active()) setCompressing(selected.length - index - 1);
       }
-      const image: LocalImage = {
-        id: createRandomUuid(),
-        blob: result.value.blob,
-        name: "draft-" + createRandomUuid() + ".webp",
-        width: result.value.width,
-        height: result.value.height,
-        byteSize: result.value.blob.size,
-        previewUrl: URL.createObjectURL(result.value.blob),
-      };
-      try {
-        await saveDraftImage(image);
-        added.push(image);
-      } catch {
-        URL.revokeObjectURL(image.previewUrl);
-        setImageMessage("图片无法保存到本地草稿，请检查浏览器存储空间");
+    } finally {
+      if (active()) {
+        compressionController.current = null;
+        setCompressing(0);
+        if (fileInputRef.current) fileInputRef.current.value = "";
       }
     }
-    setImages((current) => [...current, ...added].slice(0, 3));
-    setCompressing(0);
-    if (fileInputRef.current) fileInputRef.current.value = "";
   };
 
   const removeImage = async (image: LocalImage) => {
-    await deleteDraftImage(image.id).catch(() => undefined);
+    if (submittingRef.current || draft.submissionPending) return;
     URL.revokeObjectURL(image.previewUrl);
-    setImages((current) => current.filter((item) => item.id !== image.id));
+    imagesRef.current = imagesRef.current.filter((item) => item.id !== image.id);
+    setImages(imagesRef.current);
+    await deleteDraftImage(image.id).catch(() => undefined);
   };
 
-  const clearSelectedImages = async () => {
-    images.forEach((image) => URL.revokeObjectURL(image.previewUrl));
-    await clearDraftImages().catch(() => undefined);
+  const clearSelectedImages = () => {
+    imageGeneration.current += 1;
+    compressionController.current?.abort();
+    compressionController.current = null;
+    setCompressing(0);
+    const removed = imagesRef.current;
+    removed.forEach((image) => URL.revokeObjectURL(image.previewUrl));
+    imagesRef.current = [];
     setImages([]);
     setImageMessage(null);
+    void Promise.all(removed.map((image) => deleteDraftImage(image.id))).catch(() => undefined);
   };
 
-  const toggleImages = async (enabled: boolean) => {
-    if (!enabled && images.length > 0) {
+  const toggleImages = (enabled: boolean) => {
+    if (!hydrated || submittingRef.current || draft.submissionPending) return;
+    if (!enabled && imagesRef.current.length > 0) {
       const confirmed = window.confirm("关闭后会清除已经选择的图片，确定关闭吗？");
       if (!confirmed) return;
-      await clearSelectedImages();
     }
+    if (!enabled) clearSelectedImages();
     update("imagesEnabled", enabled);
   };
 
-  const startFresh = async () => {
-    await clearSelectedImages();
+  const startFresh = () => {
+    if (submittingRef.current || !hydrated || draft.submissionPending) return;
+    clearSelectedImages();
+    clearDraftFields();
+    setDraft(EMPTY_DRAFT());
+    setRecovered(false);
+    setErrors({});
+    setFormMessage(null);
+  };
+
+  const abandonMissingDraft = () => {
+    if (!window.confirm("请先查询“我的留言”确认上次是否成功。确定放弃这份图片不完整的草稿，重新填写吗？")) return;
+    clearSelectedImages();
     clearDraftFields();
     setDraft(EMPTY_DRAFT());
     setRecovered(false);
@@ -257,7 +343,7 @@ export function FeedbackForm({ config }: { config: PublicConfig }) {
         <div className="recovery-banner" role="status">
           <CheckCircle aria-hidden="true" weight="fill" />
           <div><strong>已恢复上次未提交的内容</strong><span>文字和图片仍只保存在这台设备上</span></div>
-          <button type="button" onClick={() => void startFresh()}>重新填写</button>
+          <button type="button" disabled={!hydrated || locked} onClick={startFresh}>重新填写</button>
         </div>
       )}
 
@@ -265,6 +351,7 @@ export function FeedbackForm({ config }: { config: PublicConfig }) {
         <FormField index="01" label="留言主题" htmlFor="topic" required error={errors.topic}>
           <select
             id="topic"
+            disabled={locked}
             required
             value={draft.topic}
             onChange={(event) => {
@@ -283,6 +370,7 @@ export function FeedbackForm({ config }: { config: PublicConfig }) {
           <FormField label="请填写留言主题" htmlFor="custom-topic" required error={errors.customTopic} className="progressive-field">
             <input
               id="custom-topic"
+              disabled={locked}
               required
               value={draft.customTopic ?? ""}
               maxLength={60}
@@ -297,6 +385,7 @@ export function FeedbackForm({ config }: { config: PublicConfig }) {
         <FormField index="02" label="留言内容" htmlFor="content" required error={errors.content}>
           <textarea
             id="content"
+            disabled={locked}
             required
             value={draft.content}
             maxLength={2000}
@@ -319,6 +408,7 @@ export function FeedbackForm({ config }: { config: PublicConfig }) {
         >
           <input
             id="nickname"
+            disabled={locked}
             required
             value={draft.nickname}
             maxLength={40}
@@ -338,6 +428,7 @@ export function FeedbackForm({ config }: { config: PublicConfig }) {
               <span>{draft.imagesEnabled ? "已开启" : "未开启"}</span>
               <input
                 id="images-enabled"
+                disabled={!hydrated || locked}
                 type="checkbox"
                 role="switch"
                 checked={draft.imagesEnabled}
@@ -352,6 +443,7 @@ export function FeedbackForm({ config }: { config: PublicConfig }) {
                 ref={fileInputRef}
                 className="sr-only"
                 id="images"
+                disabled={!hydrated || locked || compressing > 0}
                 type="file"
                 accept="image/jpeg,image/png,image/webp"
                 multiple
@@ -361,7 +453,7 @@ export function FeedbackForm({ config }: { config: PublicConfig }) {
                 type="button"
                 className="upload-button"
                 onClick={() => fileInputRef.current?.click()}
-                disabled={images.length >= 3 || compressing > 0}
+                disabled={!hydrated || locked || images.length >= 3 || compressing > 0}
               >
                 <UploadSimple aria-hidden="true" weight="bold" />
                 <span>
@@ -381,7 +473,7 @@ export function FeedbackForm({ config }: { config: PublicConfig }) {
                         <ImageSquare aria-hidden="true" />
                         <span>{Math.max(1, Math.round(image.byteSize / 1024))} KB</span>
                       </div>
-                      <button type="button" onClick={() => void removeImage(image)} aria-label="移除这张图片">
+                      <button type="button" disabled={locked || compressing > 0} onClick={() => void removeImage(image)} aria-label="移除这张图片">
                         <Trash aria-hidden="true" weight="bold" />
                       </button>
                     </li>
@@ -394,7 +486,7 @@ export function FeedbackForm({ config }: { config: PublicConfig }) {
 
         <div className="form-submit-zone">
           <TurnstileWidget ref={turnstileRef} siteKey={config.turnstileSiteKey} />
-          <fieldset className="acknowledgements">
+          <fieldset className="acknowledgements" disabled={locked}>
             <legend className="sr-only">提交前确认</legend>
             <div className={errors.privacyAgreed ? "checkbox-row checkbox-row--error" : "checkbox-row"}>
               <input
@@ -424,10 +516,15 @@ export function FeedbackForm({ config }: { config: PublicConfig }) {
             </div>
           </fieldset>
           {formMessage && <p className="form-message" role="alert">{formMessage}</p>}
+          {draft.submissionPending && !submitting && <p className="form-message" role="status">上次提交的结果尚未确认，内容已暂时锁定。请点击提交留言重试确认，不会重复创建留言。</p>}
+          {hydrated && draft.submissionPending && !submitting && (draft.submissionImageCount ?? 0) !== images.length && <Button type="button" variant="quiet" onClick={abandonMissingDraft}>已核对留言，重新填写</Button>}
+          {!hydrated && <p className="form-message" role="status">正在恢复草稿，请稍候</p>}
+          {compressing > 0 && <p className="form-message" role="status">图片处理完成后即可提交</p>}
           <Button
             className="submit-button"
             type="submit"
             loading={submitting}
+            disabled={!hydrated || compressing > 0}
             loadingLabel="正在提交"
             icon={<PaperPlaneTilt aria-hidden="true" weight="fill" />}
           >

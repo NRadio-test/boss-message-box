@@ -23,8 +23,8 @@ self.onmessage = async (event: MessageEvent<CompressMessage>) => {
   const { id, file } = event.data;
   try {
     const bitmap = await createImageBitmap(file, { imageOrientation: "from-image" });
-    const result = await encode(bitmap, 2560, 0.84);
-    bitmap.close();
+    let result;
+    try { result = await encode(bitmap, 2560, 0.84); } finally { bitmap.close(); }
     if (result.blob.size <= 0) throw new Error("图片处理失败，请重新选择");
     self.postMessage({ id, ok: true, ...result });
   } catch (error) {

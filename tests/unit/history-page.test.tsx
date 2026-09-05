@@ -6,6 +6,25 @@ import { HistoryPage } from "../../src/features/history/HistoryPage";
 afterEach(() => vi.unstubAllGlobals());
 
 describe("public history replies", () => {
+  it("loads later pages with the original nickname and cursor", async () => {
+    const first = { id: crypto.randomUUID(), createdAt: 10, topic: "appeal", customTopic: null, content: "第一批留言", imageCount: 0, status: "unreplied", replies: [], replyContent: null };
+    const second = { ...first, id: crypto.randomUUID(), createdAt: 9, content: "第二批留言" };
+    const cursor = { id: first.id, createdAt: first.createdAt };
+    const fetchMock = vi.fn().mockResolvedValueOnce(new Response(JSON.stringify({ ok: true, items: [first], nextCursor: cursor }))).mockResolvedValueOnce(new Response(JSON.stringify({ ok: true, items: [second], nextCursor: null })));
+    vi.stubGlobal("fetch", fetchMock);
+    const user = userEvent.setup();
+    render(<HistoryPage />);
+    await user.type(screen.getByRole("textbox", { name: /抖音昵称/u }), "原昵称");
+    await user.click(screen.getByRole("button", { name: "查询留言" }));
+    await screen.findByText("第一批留言");
+    await user.clear(screen.getByRole("textbox", { name: /抖音昵称/u }));
+    await user.type(screen.getByRole("textbox", { name: /抖音昵称/u }), "其他昵称");
+    await user.click(screen.getByRole("button", { name: "加载更多留言" }));
+    expect(await screen.findByText("第二批留言")).toBeInTheDocument();
+    expect(screen.getByText("第一批留言")).toBeInTheDocument();
+    expect(JSON.parse(fetchMock.mock.calls[1]![1].body)).toEqual({ nickname: "原昵称", before: cursor });
+    expect(screen.queryByRole("button", { name: "加载更多留言" })).not.toBeInTheDocument();
+  });
   it("renders every reply oldest first without exposing Studio administrator names", async () => {
     const createdAt = Date.UTC(2026, 8, 3, 9, 0, 0);
     vi.stubGlobal("fetch", vi.fn(async () => new Response(JSON.stringify({

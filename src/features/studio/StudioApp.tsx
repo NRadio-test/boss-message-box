@@ -4,6 +4,7 @@ import { StudioShell } from "./components/StudioShell";
 import { FeedbackDetailPage } from "./pages/FeedbackDetailPage";
 import { FeedbackListPage } from "./pages/FeedbackListPage";
 import { LoginPage } from "./pages/LoginPage";
+import { PasswordPage } from "./pages/PasswordPage";
 import { SearchPage } from "./pages/SearchPage";
 import { UserDetailPage } from "./pages/UserDetailPage";
 import { StudioSessionProvider } from "./session";
@@ -42,6 +43,7 @@ export function StudioApp() {
             <Route path="filtered" element={<FeedbackListPage view="filtered" />} />
             <Route path="todo" element={<FeedbackListPage view="todo" />} />
             <Route path="search" element={<SearchPage />} />
+            <Route path="password" element={<PasswordPage />} />
             <Route path="feedback/:feedbackId" element={<FeedbackDetailPage />} />
             <Route path="user/:userId" element={<UserDetailPage />} />
             <Route path="*" element={<Navigate to="/studio/unreplied" replace />} />

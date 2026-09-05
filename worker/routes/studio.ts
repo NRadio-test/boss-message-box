@@ -7,6 +7,7 @@ import {
   studioModeUpdateSchema,
   studioReplyCreateSchema,
   studioSearchSchema,
+  studioPasswordSchema,
   type StudioSessionSuccess,
 } from "../../src/shared/studio-contracts";
 import { topicSchema } from "../../src/shared/contracts";
@@ -24,6 +25,7 @@ import { WebCryptoPhoneService } from "../security/crypto";
 import { Pbkdf2PasswordVerifier } from "../security/password";
 import { StudioAuthService } from "../services/studio-auth-service";
 import { StudioService } from "../services/studio-service";
+import { createAiModerationService } from "../services/moderation-factory";
 
 const SESSION_COOKIE = "__Host-boss_studio_session";
 const SESSION_MAX_AGE = 30 * 24 * 60 * 60;
@@ -68,7 +70,7 @@ function services(env: Env): {
   rateLimits: D1RateLimitService;
 } {
   const rateLimits = new D1RateLimitService(env.BOSS_MESSAGE_DB, env.RATE_LIMIT_HMAC_KEY);
-  const phoneCrypto = new WebCryptoPhoneService(env.PHONE_HASH_KEY, env.PHONE_ENCRYPTION_KEY);
+  const phoneCrypto = () => new WebCryptoPhoneService(env.PHONE_HASH_KEY, env.PHONE_ENCRYPTION_KEY);
   return {
     rateLimits,
     auth: new StudioAuthService({
@@ -162,6 +164,15 @@ studioRoutes.post("/logout", async (context) => {
   return context.json({ ok: true as const });
 });
 
+studioRoutes.post("/password", async (context) => {
+  requireSameOrigin(context.req.raw);
+  const parsed = studioPasswordSchema.safeParse(await context.req.json().catch(() => null));
+  if (!parsed.success) throw validationError(parsed.error);
+  await services(context.env).auth.changePassword({ ...parsed.data, session: context.get("studioSession"), now: Date.now() });
+  deleteCookie(context, SESSION_COOKIE, { path: "/", secure: true });
+  return context.json({ ok: true as const });
+});
+
 studioRoutes.put("/session/mode", async (context) => {
   requireSameOrigin(context.req.raw);
   const parsed = studioModeUpdateSchema.safeParse(await context.req.json().catch(() => null));
@@ -239,6 +250,7 @@ studioRoutes.post("/feedbacks/:feedbackId/replies", async (context) => {
   if (!parsed.success) throw validationError(parsed.error);
   return context.json(
     await services(context.env).studio.reply({
+      requestKey: parsed.data.requestKey,
       feedbackId,
       requestedType: parsed.data.replyType,
       content: parsed.data.content,
@@ -289,6 +301,22 @@ studioRoutes.put("/feedbacks/:feedbackId/moderation", async (context) => {
   );
 });
 
+studioRoutes.post("/feedbacks/:feedbackId/retry-moderation", async (context) => {
+  requireSameOrigin(context.req.raw);
+  const session = context.get("studioSession");
+  if (session.mode !== "normal") throw new PublicError(403, "FORBIDDEN", "请先退出直播模式");
+  const feedbackId = parseId(feedbackIdSchema, context.req.param("feedbackId"));
+  const now = Date.now();
+  const limit = await services(context.env).rateLimits.consume({
+    operation: "studio-ai-retry", identity: session.admin.id, limit: 10, windowSeconds: 60, now,
+  });
+  if (!limit.allowed) throw new PublicError(429, "RATE_LIMITED", "操作较频繁，请稍后再试");
+  const run = await createAiModerationService(context.env).start({ feedbackId, now, manual: true });
+  if (!run) throw new PublicError(409, "FEEDBACK_NOT_READY", "留言正在审核、已回复或已人工处理，请刷新后查看");
+  context.executionCtx.waitUntil(run());
+  return context.json({ ok: true as const });
+});
+
 studioRoutes.get("/users/:userId", async (context) => {
   const userId = parseId(feedbackIdSchema, context.req.param("userId"));
   return context.json(
@@ -318,6 +346,7 @@ studioRoutes.get("/new-feedback-count", async (context) => {
         id: parsed.data.afterId,
       },
       parsed.data.topic ?? null,
+      context.get("studioSession").mode === "live",
     ),
   );
 });

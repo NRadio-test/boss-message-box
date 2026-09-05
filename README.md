@@ -12,10 +12,13 @@ corepack enable
 pnpm install --frozen-lockfile
 cp .dev.vars.example .dev.vars
 pnpm run db:migrate:local
+pnpm run admin:password --username zd --local
 pnpm dev
 ```
 
 本地配置请从 `.dev.vars.example` 开始，并为需要的密钥填写仅用于开发的值。`.dev.vars` 和任何真实凭据都不应提交到 Git。
+
+首次使用需为管理员设置密码；命令会在终端中隐藏输入。登录后可在 Studio 的「修改密码」中更换密码，更换后所有旧会话失效。
 
 ## 常用命令
 
@@ -59,3 +62,7 @@ public/                静态资源
 - `pnpm run check` 完整通过。
 
 随后按当前部署流程发布代码。管理员凭据、生产数据处理规则及其他内部运维信息不在 README 中维护。
+
+`0005` 迁移保留现有账号和留言，但会禁用仍使用旧初始密码的账号。需要时使用 `pnpm run admin:password --username <账号> --remote` 设置新密码。已自行更换密码的账号不受此迁移影响。
+
+短信入口由 `OTP_ENABLED` 控制，当前默认关闭。AI 筛选异步执行，失败时保留留言，并通过定时任务有限重试；Studio 也支持人工重试。`AI_THINKING` 仅用于支持该参数的提供方。服务端整次上传的资源保护上限为 32 MiB。

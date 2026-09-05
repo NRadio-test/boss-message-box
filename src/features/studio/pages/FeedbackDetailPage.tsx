@@ -13,6 +13,7 @@ import {
 import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from "react";
 import { Link, useLocation, useNavigate, useOutletContext, useParams } from "react-router-dom";
 import { Button } from "../../../components/Button";
+import { createRandomUuid } from "../../../lib/random-id";
 import { TOPIC_LABELS, TOPIC_VALUES, type Topic } from "../../../shared/contracts";
 import type { StudioFeedbackDetail, StudioReplyType } from "../../../shared/studio-contracts";
 import {
@@ -20,6 +21,8 @@ import {
   getNextStudioFeedback,
   getStudioFeedback,
   revealStudioPhone,
+  retryStudioModeration,
+  StudioApiError,
   updateStudioModeration,
 } from "../api";
 import type { StudioReturnContext } from "../navigation-context";
@@ -42,6 +45,13 @@ interface DetailLocationState {
   returnContext?: StudioReturnContext;
 }
 
+interface ReplyAttempt {
+  feedbackId: string;
+  content: string;
+  replyType?: StudioReplyType;
+  requestKey: string;
+}
+
 export function FeedbackDetailPage() {
   const { feedbackId = "" } = useParams();
   const { liveMode } = useOutletContext<StudioOutletContext>();
@@ -57,6 +67,8 @@ export function FeedbackDetailPage() {
   const [replyType, setReplyType] = useState<StudioReplyType | null>(null);
   const [replyContent, setReplyContent] = useState("");
   const [replyError, setReplyError] = useState<string | null>(null);
+  const [replyPending, setReplyPending] = useState(false);
+  const [moderationNotice, setModerationNotice] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [moderationBusy, setModerationBusy] = useState(false);
   const [nextBusy, setNextBusy] = useState(false);
@@ -65,16 +77,26 @@ export function FeedbackDetailPage() {
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [lightboxIndex, setLightboxIndex] = useState<number | null>(null);
   const replyRef = useRef<HTMLTextAreaElement>(null);
+  const actionRef = useRef(false);
+  const replyAttemptRef = useRef<ReplyAttempt | null>(null);
+  const currentFeedbackRef = useRef(feedbackId);
 
   useEffect(() => {
     const controller = new AbortController();
+    if (currentFeedbackRef.current !== feedbackId) {
+      currentFeedbackRef.current = feedbackId;
+      replyAttemptRef.current = null;
+      setReplyPending(false);
+      setAtEnd(false);
+      setLiveNotice(null);
+      setModerationNotice(null);
+      setReplyContent("");
+      setReplyType(null);
+      setReplyError(null);
+    }
     getStudioFeedback(feedbackId, controller.signal)
       .then((value) => {
-        setAtEnd(false);
-        setLiveNotice(null);
-        setReplyContent("");
-        setReplyType(null);
-        setReplyError(null);
+        if (controller.signal.aborted) return;
         setLoaded({ feedbackId, item: value.item });
         setError(null);
       })
@@ -82,7 +104,7 @@ export function FeedbackDetailPage() {
         if (!controller.signal.aborted) setError(reason instanceof Error ? reason.message : "留言详情加载失败");
       });
     return () => controller.abort();
-  }, [feedbackId, reload]);
+  }, [feedbackId, liveMode, reload]);
 
   const images = useMemo<LightboxImage[]>(
     () => item?.images.map((image, index) => ({
@@ -147,31 +169,17 @@ export function FeedbackDetailPage() {
   };
 
   const submitReply = async () => {
-    if (!item || !validateReply()) return;
+    if (!item || actionRef.current || !validateReply()) return;
+    actionRef.current = true;
     setSubmitting(true);
     try {
-      const value = await createStudioReply(
-        item.id,
-        replyContent.trim(),
-        liveMode ? undefined : replyType ?? undefined,
-      );
-      setLoaded((current) => current?.feedbackId === feedbackId ? {
-        feedbackId,
-        item: {
-          ...current.item,
-          replies: [...current.item.replies, value.reply],
-          status: current.item.moderationStatus === "filtered" ? "filtered" : value.status,
-          isTodo: value.isTodo,
-          replyCount: value.replyCount,
-          latestReplyAdmin: value.latestReplyAdmin,
-        },
-      } : current);
-      setReplyContent("");
+      await saveReply(replyContent.trim(), liveMode ? undefined : replyType ?? undefined);
       setReplyType(null);
       setConfirmOpen(false);
     } catch (reason) {
       setReplyError(reason instanceof Error ? reason.message : "回复提交失败，请稍后重试");
     } finally {
+      actionRef.current = false;
       setSubmitting(false);
     }
   };
@@ -181,17 +189,60 @@ export function FeedbackDetailPage() {
       feedbackId,
       item: {
         ...current.item,
-        replies: [...current.item.replies, value.reply],
+        replies: current.item.replies.some((reply) => reply.id === value.reply.id)
+          ? current.item.replies
+          : [...current.item.replies, value.reply],
         status: current.item.moderationStatus === "filtered" ? "filtered" : value.status,
         isTodo: value.isTodo,
         replyCount: value.replyCount,
         latestReplyAdmin: value.latestReplyAdmin,
+        moderationStatus: current.item.moderationStatus === "pending" ? "kept" : current.item.moderationStatus,
       },
     } : current);
   };
 
+  const saveReply = async (content: string, type?: StudioReplyType) => {
+    const attempt = replyAttemptRef.current ?? {
+      feedbackId,
+      content,
+      replyType: type,
+      requestKey: createRandomUuid(),
+    };
+    replyAttemptRef.current = attempt;
+    setReplyPending(true);
+    try {
+      const value = await createStudioReply(attempt.feedbackId, attempt.content, attempt.replyType, attempt.requestKey);
+      applyReply(value);
+      replyAttemptRef.current = null;
+      setReplyPending(false);
+      setReplyContent("");
+    } catch (reason) {
+      // A rejected request may be edited; uncertain outcomes must retry the same operation.
+      if (reason instanceof StudioApiError && reason.status >= 400 && reason.status < 500) {
+        replyAttemptRef.current = null;
+        setReplyPending(false);
+      }
+      throw reason;
+    }
+  };
+
+  const retryModeration = async () => {
+    if (!item || liveMode || moderationBusy || actionRef.current) return;
+    setModerationBusy(true);
+    setReplyError(null);
+    try {
+      await retryStudioModeration(item.id);
+      setModerationNotice("已重新提交 AI 筛选");
+      setReload((value) => value + 1);
+    } catch (reason) {
+      setReplyError(reason instanceof Error ? reason.message : "暂时无法重新筛选");
+    } finally {
+      setModerationBusy(false);
+    }
+  };
+
   const setFiltered = async (filtered: boolean) => {
-    if (!item || liveMode || moderationBusy) return;
+    if (!item || liveMode || moderationBusy || actionRef.current) return;
     setModerationBusy(true);
     setReplyError(null);
     try {
@@ -217,21 +268,25 @@ export function FeedbackDetailPage() {
   };
 
   const goNext = async () => {
-    if (!item || nextBusy || atEnd) return;
+    if (!item || actionRef.current) return;
     const content = replyContent.trim();
+    if (atEnd && !content) return;
     if (content.length > 2000) {
       setReplyError("回复内容不能超过 2000 个字符");
       replyRef.current?.focus();
       return;
     }
+    actionRef.current = true;
     setNextBusy(true);
     setReplyError(null);
     setLiveNotice(null);
     try {
       if (content) {
-        const value = await createStudioReply(item.id, content);
-        applyReply(value);
-        setReplyContent("");
+        await saveReply(content);
+      }
+      if (atEnd) {
+        setLiveNotice("回复已保存，已经是最后一条了");
+        return;
       }
       const query = new URLSearchParams(location.search);
       const view = query.get("view") === "todo" ? "todo" : "unreplied";
@@ -240,6 +295,7 @@ export function FeedbackDetailPage() {
         ? topicValue as Topic
         : null;
       const next = await getNextStudioFeedback(item.id, view, topic);
+      if (currentFeedbackRef.current !== item.id) return;
       if (!next.nextFeedbackId) {
         setAtEnd(true);
         setLiveNotice("已经是最后一条了");
@@ -251,9 +307,11 @@ export function FeedbackDetailPage() {
         replace: true,
         state: { returnContext },
       });
+      window.scrollTo({ top: 0, behavior: "instant" });
     } catch (reason) {
       setReplyError(reason instanceof Error ? reason.message : "下一条留言暂时无法加载");
     } finally {
+      actionRef.current = false;
       setNextBusy(false);
     }
   };
@@ -266,6 +324,9 @@ export function FeedbackDetailPage() {
 
   if (error) return <div className="studio-page"><StudioError message={error} onRetry={() => { setError(null); setLoaded(null); setReload((value) => value + 1); }} /></div>;
   if (!item) return <StudioLoading label="正在加载留言详情" />;
+  if (liveMode && item.moderationStatus !== "kept" && item.moderationStatus !== "failed") {
+    return <div className="studio-page"><StudioError message="这条留言尚不能进入直播，请等待筛选完成或返回列表。" onRetry={() => setReload((value) => value + 1)} /><Button type="button" variant="quiet" onClick={goBack}>返回列表</Button></div>;
+  }
 
   const topic = item.topic === "other" ? item.customTopic : TOPIC_LABELS[item.topic];
   const replies = [...item.replies].sort((left, right) => left.createdAt - right.createdAt);
@@ -354,12 +415,17 @@ export function FeedbackDetailPage() {
               {item.moderationReason && item.moderationStatus === "filtered" && (
                 <small>{item.moderationReason}</small>
               )}
+              {moderationNotice && <small role="status">{moderationNotice}</small>}
             </div>
+            {item.replyCount === 0 && (item.moderationStatus === "failed" || item.moderationStatus === "pending") && (
+              <Button type="button" variant="secondary" disabled={moderationBusy || submitting || nextBusy} onClick={() => void retryModeration()}>重新 AI 筛选</Button>
+            )}
             <Button
               type="button"
               variant="secondary"
               loading={moderationBusy}
               loadingLabel="正在更新"
+              disabled={submitting || nextBusy}
               icon={<ShieldWarning aria-hidden="true" />}
               onClick={() => void setFiltered(item.moderationStatus !== "filtered")}
             >
@@ -389,7 +455,7 @@ export function FeedbackDetailPage() {
 
       <section className="studio-reply-composer" aria-labelledby="studio-compose-title">
         <div className="studio-section-title"><h2 id="studio-compose-title">{liveMode ? "直播回复（可留空）" : "追加回复"}</h2><small>{replyContent.length} / 2000</small></div>
-        <fieldset className="studio-reply-types">
+        <fieldset className="studio-reply-types" disabled={submitting || nextBusy || replyPending}>
           <legend>回复方式</legend>
           {liveMode ? (
             <div className="studio-locked-reply-type"><Broadcast aria-hidden="true" />直播回复</div>
@@ -407,6 +473,7 @@ export function FeedbackDetailPage() {
           value={replyContent}
           maxLength={2000}
           rows={7}
+          disabled={submitting || nextBusy || replyPending}
           placeholder="填写要追加的回复内容"
           aria-invalid={Boolean(replyError)}
           aria-describedby={replyError ? "studio-reply-error" : undefined}
@@ -416,6 +483,7 @@ export function FeedbackDetailPage() {
           }}
         />
         {replyError && <p id="studio-reply-error" className="studio-field-error" role="alert">{replyError}</p>}
+        {replyPending && !submitting && !nextBusy && <p role="status">尚未确认回复是否保存，请重试提交。确认前会保留原回复内容。</p>}
         {!liveMode && <div className="studio-detail-actions">
           <Button type="button" variant="quiet" icon={<ArrowLeft aria-hidden="true" />} onClick={goBack}>返回</Button>
           <Button type="button" loading={submitting} loadingLabel="正在提交" icon={<PaperPlaneTilt aria-hidden="true" weight="fill" />} onClick={requestSubmit}>提交</Button>
@@ -430,11 +498,11 @@ export function FeedbackDetailPage() {
             className="studio-live-next"
             loading={nextBusy}
             loadingLabel={replyContent.trim() ? "正在保存并前进" : "正在打开下一条"}
-            disabled={atEnd}
+            disabled={atEnd && !replyContent.trim()}
             icon={<ArrowRight aria-hidden="true" weight="bold" />}
             onClick={() => void goNext()}
           >
-            {atEnd ? "已经是最后一条" : "下一条"}
+            {atEnd ? replyContent.trim() ? "保存回复" : "已经是最后一条" : "下一条"}
           </Button>
         </div>
       )}

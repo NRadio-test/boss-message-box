@@ -5,6 +5,7 @@ export interface Env {
   APP_ENV: "development" | "production" | "test";
   SMS_PROVIDER: "mock" | "alibaba_pnvs";
   DEV_OTP_CODE?: string;
+  OTP_ENABLED?: string;
   TURNSTILE_SITE_KEY: string;
   TURNSTILE_SECRET_KEY: string;
   TURNSTILE_EXPECTED_HOSTNAMES?: string;
@@ -21,4 +22,5 @@ export interface Env {
   AI_BASE_URL?: string;
   AI_API_KEY?: string;
   AI_MODEL?: string;
+  AI_THINKING?: "enabled" | "disabled";
 }

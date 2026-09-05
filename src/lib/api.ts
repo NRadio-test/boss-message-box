@@ -8,6 +8,7 @@ import type {
   PublicConfig,
   SubmitSuccess,
 } from "../shared/contracts";
+import { requestJson } from "./request";
 
 export class ApiClientError extends Error {
   constructor(readonly body: ApiErrorBody) {
@@ -16,8 +17,8 @@ export class ApiClientError extends Error {
   }
 }
 
-async function expectJson<T>(response: Response): Promise<T> {
-  const body = (await response.json().catch(() => null)) as T | ApiErrorBody | null;
+async function expectJson<T>(path: string, init: RequestInit, timeoutMs?: number): Promise<T> {
+  const { response, body } = await requestJson<T | ApiErrorBody>(path, init, timeoutMs);
   if (!response.ok || !body) {
     if (body && typeof body === "object" && "ok" in body && body.ok === false) {
       throw new ApiClientError(body);
@@ -28,41 +29,45 @@ async function expectJson<T>(response: Response): Promise<T> {
 }
 
 export async function getPublicConfig(signal?: AbortSignal): Promise<PublicConfig> {
-  return expectJson(await fetch("/api/config", { signal, headers: { Accept: "application/json" } }));
+  return expectJson("/api/config", { signal, headers: { Accept: "application/json" } });
 }
 
 export async function requestOtp(payload: OtpRequest): Promise<OtpRequestSuccess> {
   return expectJson(
-    await fetch("/api/otp/request", {
+    "/api/otp/request", {
       method: "POST",
       headers: { "Content-Type": "application/json", Accept: "application/json" },
       body: JSON.stringify(payload),
-    }),
+    },
   );
 }
 
 export async function submitFeedback(
   payload: FeedbackSubmission,
   images: File[],
+  signal?: AbortSignal,
 ): Promise<SubmitSuccess> {
   const formData = new FormData();
   formData.set("payload", JSON.stringify(payload));
   for (const image of images) formData.append("images", image, image.name);
   return expectJson(
-    await fetch("/api/feedback", {
+    "/api/feedback", {
       method: "POST",
       headers: { Accept: "application/json" },
       body: formData,
-    }),
+      signal,
+    },
+    90_000,
   );
 }
 
-export async function queryHistory(payload: HistoryQuery): Promise<HistorySuccess> {
+export async function queryHistory(payload: HistoryQuery, signal?: AbortSignal): Promise<HistorySuccess> {
   return expectJson(
-    await fetch("/api/history", {
+    "/api/history", {
       method: "POST",
       headers: { "Content-Type": "application/json", Accept: "application/json" },
       body: JSON.stringify(payload),
-    }),
+      signal,
+    },
   );
 }

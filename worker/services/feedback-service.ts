@@ -5,9 +5,10 @@ import type {
   ImageCleanupRepository,
   ImageProcessor,
   ImageStorage,
+  StoredImageInput,
   TurnstileVerifier,
 } from "../core/ports";
-import { MAX_IMAGE_COUNT } from "../security/image";
+import { ImageValidationError, MAX_IMAGE_COUNT } from "../security/image";
 
 const BEIJING_OFFSET_MS = 8 * 60 * 60 * 1000;
 
@@ -66,44 +67,31 @@ export class FeedbackService {
       });
     }
 
-    let processedImages;
-    try {
-      processedImages = await Promise.all(
-        input.imageFiles.map((file) => this.dependencies.imageProcessor.sanitize(file)),
-      );
-    } catch (error) {
-      throw new PublicError(
-        400,
-        "IMAGE_INVALID",
-        error instanceof Error ? error.message : "图片处理失败，请重新选择",
-      );
-    }
-
     const feedbackId = crypto.randomUUID();
-    const imageRecords = processedImages.map((image) => ({
-      id: crypto.randomUUID(),
-      objectKey: `feedback-images/${feedbackId}/${crypto.randomUUID()}.webp`,
-      mediaType: "image/webp" as const,
-      byteSize: image.byteSize,
-      width: image.width,
-      height: image.height,
-      sha256: image.sha256,
-      data: image.data,
-    }));
-    const uploads = await Promise.allSettled(
-      imageRecords.map((image) =>
-        this.dependencies.images.putPrivate(image.objectKey, image.data, {
-          feedbackId,
-          sha256: image.sha256,
-        }),
-      ),
-    );
-    const uploadedKeys = uploads.flatMap((result, index) =>
-      result.status === "fulfilled" ? [imageRecords[index]!.objectKey] : [],
-    );
-    if (uploads.some((result) => result.status === "rejected")) {
-      await this.cleanup(uploadedKeys, input.now);
-      throw new PublicError(503, "SUBMISSION_FAILED", "图片上传失败，请检查网络后重试");
+    const imageRecords: StoredImageInput[] = [];
+    const uploadedKeys: string[] = [];
+    for (const file of input.imageFiles) {
+      let image;
+      try {
+        image = await this.dependencies.imageProcessor.sanitize(file);
+      } catch (error) {
+        await this.cleanup(uploadedKeys, input.now);
+        throw new PublicError(400, "IMAGE_INVALID",
+          error instanceof ImageValidationError ? error.message : "图片处理失败，请重新选择");
+      }
+      const objectKey = `feedback-images/${feedbackId}/${crypto.randomUUID()}.webp`;
+      // Include the current key: a rejected upload can still have reached storage.
+      uploadedKeys.push(objectKey);
+      try {
+        await this.dependencies.images.putPrivate(objectKey, image.data, { feedbackId, sha256: image.sha256 });
+      } catch {
+        await this.cleanup(uploadedKeys, input.now);
+        throw new PublicError(503, "SUBMISSION_FAILED", "图片上传失败，请检查网络后重试");
+      }
+      imageRecords.push({
+        id: crypto.randomUUID(), objectKey, mediaType: "image/webp",
+        byteSize: image.byteSize, width: image.width, height: image.height, sha256: image.sha256,
+      });
     }
 
     try {
@@ -119,7 +107,7 @@ export class FeedbackService {
         privacyAgreedAt: input.now,
         livestreamPolicyVersion: this.dependencies.livestreamPolicyVersion,
         livestreamAgreedAt: input.now,
-        images: imageRecords.map(({ data: _data, ...image }) => image),
+        images: imageRecords,
         now: input.now,
       });
       if (result.status === "created" || result.status === "idempotent") {
@@ -149,12 +137,16 @@ export class FeedbackService {
 
   async history(input: {
     nickname: string;
+    before?: { createdAt: number; id: string };
   }): Promise<HistorySuccess> {
-    const items = await this.dependencies.feedback.findHistory(input.nickname);
+    const items = await this.dependencies.feedback.findHistory(input.nickname, input.before);
     if (!items) {
+      if (input.before) return { ok: true, items: [], nextCursor: null };
       throw new PublicError(404, "HISTORY_NOT_FOUND", "未找到匹配的留言记录，请检查抖音昵称");
     }
-    return { ok: true, items };
+    const page = items.slice(0, 30);
+    const last = page.at(-1);
+    return { ok: true, items: page, nextCursor: items.length > 30 && last ? { createdAt: last.createdAt, id: last.id } : null };
   }
 
   private async cleanup(keys: string[], now: number, databaseOutcomeUnknown = false): Promise<void> {

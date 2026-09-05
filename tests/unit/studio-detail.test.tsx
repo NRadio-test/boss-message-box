@@ -121,7 +121,7 @@ describe("Studio reply interaction", () => {
     await waitFor(() => expect(fetchMock.mock.calls.filter(([, init]) => init?.method === "POST")).toHaveLength(1));
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
     const post = fetchMock.mock.calls.find(([, init]) => init?.method === "POST");
-    expect(JSON.parse(String(post?.[1]?.body))).toEqual({ content: "直播回复内容" });
+    expect(JSON.parse(String(post?.[1]?.body))).toEqual({ content: "直播回复内容", requestKey: expect.stringMatching(/^[0-9a-f-]{36}$/) });
   });
 
   it("advances without creating a reply when the live reply is empty", async () => {
@@ -133,5 +133,70 @@ describe("Studio reply interaction", () => {
 
     await waitFor(() => expect(screen.getByRole("button", { name: "已经是最后一条" })).toBeDisabled());
     expect(fetchMock.mock.calls.filter(([, init]) => init?.method === "POST")).toHaveLength(0);
+  });
+
+  it("still saves a reply entered after reaching the final live message", async () => {
+    const fetchMock = mockDetailApi();
+    const user = userEvent.setup();
+    renderDetail(true);
+    await screen.findByRole("heading", { name: "申冤" });
+    await user.click(screen.getByRole("button", { name: "下一条" }));
+    await screen.findByRole("button", { name: "已经是最后一条" });
+    await user.type(screen.getByRole("textbox", { name: "回复内容" }), "最后一条也需要回复");
+    await user.click(screen.getByRole("button", { name: "保存回复" }));
+
+    await screen.findByText("回复已保存，已经是最后一条了");
+    expect(fetchMock.mock.calls.filter(([, init]) => init?.method === "POST")).toHaveLength(1);
+    expect(screen.getByText("最后一条也需要回复")).toBeInTheDocument();
+  });
+
+  it("retries an uncertain reply with the same request key and locked content", async () => {
+    const fetchMock = mockDetailApi();
+    const original = fetchMock.getMockImplementation()!;
+    let shouldFail = true;
+    fetchMock.mockImplementation(async (input, init) => {
+      if (init?.method === "POST" && shouldFail) {
+        shouldFail = false;
+        throw new TypeError("Failed to fetch");
+      }
+      return original(input, init);
+    });
+    const user = userEvent.setup();
+    renderDetail(true);
+    await screen.findByRole("heading", { name: "申冤" });
+    const input = screen.getByRole("textbox", { name: "回复内容" });
+    await user.type(input, "只保存一次");
+    await user.click(screen.getByRole("button", { name: "下一条" }));
+    await screen.findByRole("alert");
+    expect(input).toBeDisabled();
+    await user.click(screen.getByRole("button", { name: "下一条" }));
+    await screen.findByRole("button", { name: "已经是最后一条" });
+    const posts = fetchMock.mock.calls.filter(([, init]) => init?.method === "POST");
+    expect(posts).toHaveLength(2);
+    expect(posts[0]?.[1]?.body).toEqual(posts[1]?.[1]?.body);
+    expect(input).not.toBeDisabled();
+  });
+
+  it("does not repeat a confirmed reply when loading the next message fails", async () => {
+    const fetchMock = mockDetailApi();
+    const original = fetchMock.getMockImplementation()!;
+    let shouldFail = true;
+    fetchMock.mockImplementation(async (input, init) => {
+      if (String(input).includes("/next?") && shouldFail) {
+        shouldFail = false;
+        throw new TypeError("Failed to fetch");
+      }
+      return original(input, init);
+    });
+    const user = userEvent.setup();
+    renderDetail(true);
+    await screen.findByRole("heading", { name: "申冤" });
+    await user.type(screen.getByRole("textbox", { name: "回复内容" }), "已确认保存");
+    await user.click(screen.getByRole("button", { name: "下一条" }));
+    await screen.findByRole("alert");
+    expect(screen.getByRole("textbox", { name: "回复内容" })).toHaveValue("");
+    await user.click(screen.getByRole("button", { name: "下一条" }));
+    await screen.findByRole("button", { name: "已经是最后一条" });
+    expect(fetchMock.mock.calls.filter(([, init]) => init?.method === "POST")).toHaveLength(1);
   });
 });

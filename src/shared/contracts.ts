@@ -73,6 +73,7 @@ export const feedbackSubmissionSchema = feedbackFieldsSchema.and(z.object({
 
 export const historyQuerySchema = z.object({
   nickname: nicknameSchema,
+  before: z.object({ createdAt: z.number().int().nonnegative(), id: z.string().uuid() }).optional(),
 });
 
 export type Topic = (typeof TOPIC_VALUES)[number];
@@ -95,6 +96,10 @@ export type ApiErrorCode =
   | "SUBMISSION_FAILED"
   | "HISTORY_NOT_FOUND"
   | "AUTH_FAILED"
+  | "PASSWORD_SETUP_REQUIRED"
+  | "PASSWORD_CHANGED"
+  | "REQUEST_CONFLICT"
+  | "FEEDBACK_NOT_READY"
   | "UNAUTHORIZED"
   | "FORBIDDEN"
   | "NOT_FOUND"
@@ -155,4 +160,5 @@ export interface PublicFeedback {
 export interface HistorySuccess {
   ok: true;
   items: PublicFeedback[];
+  nextCursor?: { createdAt: number; id: string } | null;
 }

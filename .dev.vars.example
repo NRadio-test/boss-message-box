@@ -2,6 +2,7 @@
 # never be copied into Cloudflare production secrets.
 APP_ENV=development
 SMS_PROVIDER=mock
+OTP_ENABLED=false
 DEV_OTP_CODE=123456
 
 # Cloudflare's official always-pass Turnstile test credentials.
@@ -9,13 +10,14 @@ TURNSTILE_SITE_KEY=1x00000000000000000000AA
 TURNSTILE_SECRET_KEY=1x0000000000000000000000000000000AA
 TURNSTILE_EXPECTED_HOSTNAMES=
 
-PRIVACY_POLICY_VERSION=2026-09-03
-LIVESTREAM_POLICY_VERSION=2026-09-03
+PRIVACY_POLICY_VERSION=2026-09-05
+LIVESTREAM_POLICY_VERSION=2026-09-05
 
 # OpenAI-compatible moderation. Use a disposable local key here; never commit
 # a real key. Missing or failed AI configuration is fail-open.
 AI_BASE_URL=https://api.deepseek.com
 AI_MODEL=deepseek-v4-flash
+AI_THINKING=disabled
 AI_API_KEY=
 
 # Four distinct 32-byte development fixtures encoded as base64.

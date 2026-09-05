@@ -2,6 +2,8 @@ import { sha256 } from "./crypto";
 
 export const MAX_IMAGE_COUNT = 3;
 
+export class ImageValidationError extends Error {}
+
 export interface ValidatedImage {
   data: ArrayBuffer;
   byteSize: number;
@@ -40,12 +42,14 @@ function readDimensions(bytes: Uint8Array, chunkType: string, dataOffset: number
     const height = (bytes[dataOffset + 8]! | (bytes[dataOffset + 9]! << 8)) & 0x3fff;
     return [width, height];
   }
-  throw new Error("无法读取图片尺寸");
+  throw new ImageValidationError("无法读取图片尺寸");
 }
 
 export async function validatePrivateWebp(file: File): Promise<ValidatedImage> {
-  if (file.size <= 0) throw new Error("图片内容无效，请重新选择");
-  const data = await file.arrayBuffer();
+  return validatePrivateWebpBytes(await file.arrayBuffer());
+}
+
+export async function validatePrivateWebpBytes(data: ArrayBuffer): Promise<ValidatedImage> {
   const bytes = new Uint8Array(data);
   if (
     bytes.length < 30 ||
@@ -53,7 +57,7 @@ export async function validatePrivateWebp(file: File): Promise<ValidatedImage> {
     fourCc(bytes, 8) !== "WEBP" ||
     new DataView(data).getUint32(4, true) + 8 !== bytes.length
   ) {
-    throw new Error("图片内容无效，请重新选择");
+    throw new ImageValidationError("图片内容无效，请重新选择");
   }
 
   let offset = 12;
@@ -64,9 +68,9 @@ export async function validatePrivateWebp(file: File): Promise<ValidatedImage> {
     const chunkSize = new DataView(data).getUint32(offset + 4, true);
     const dataOffset = offset + 8;
     const nextOffset = dataOffset + chunkSize + (chunkSize % 2);
-    if (nextOffset > bytes.length) throw new Error("图片结构不完整");
+    if (nextOffset > bytes.length) throw new ImageValidationError("图片结构不完整");
     if (["EXIF", "XMP ", "ICCP", "ANIM", "ANMF"].includes(chunkType)) {
-      throw new Error("图片仍含元数据或动画，请重新压缩后上传");
+      throw new ImageValidationError("图片仍含元数据或动画，请重新压缩后上传");
     }
     if (["VP8X", "VP8L", "VP8 "].includes(chunkType) && dimensions === null) {
       dimensions = readDimensions(bytes, chunkType, dataOffset);
@@ -75,11 +79,11 @@ export async function validatePrivateWebp(file: File): Promise<ValidatedImage> {
     offset = nextOffset;
   }
   if (offset !== bytes.length || !dimensions || imageChunkCount !== 1) {
-    throw new Error("图片内容无效，请重新选择");
+    throw new ImageValidationError("图片内容无效，请重新选择");
   }
   const [width, height] = dimensions;
   if (width < 1 || height < 1 || width > 8192 || height > 8192 || width * height > 40_000_000) {
-    throw new Error("图片尺寸超出支持范围");
+    throw new ImageValidationError("图片尺寸超出支持范围");
   }
 
   return { data, byteSize: bytes.length, width, height, sha256: await sha256(data) };

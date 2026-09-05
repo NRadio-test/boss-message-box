@@ -7,6 +7,6 @@ export default defineConfig({
   build: {
     target: ["chrome66", "safari12"],
     cssTarget: "chrome61",
-    sourcemap: true,
+    sourcemap: false,
   },
 });

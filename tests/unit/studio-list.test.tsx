@@ -132,4 +132,29 @@ describe("Studio new-feedback polling", () => {
       call[0] === "unreplied" && call[1] === 1 && call[2] === "appeal" && call[3] === null,
     )).toBe(true));
   });
+
+  it("polls an initially empty database and refreshes stats without replacing the list", async () => {
+    vi.spyOn(document, "visibilityState", "get").mockReturnValue("visible");
+    const intervalSpy = vi.spyOn(window, "setInterval");
+    mocks.getFeedbacks.mockResolvedValue({ ...response, items: [], snapshot: null });
+    mocks.getNewCount.mockResolvedValue({ ok: true, count: 1 });
+    mocks.getStats.mockResolvedValue({ ok: true, todayFeedback: 0, unreplied: 0, todo: 0, todayReplied: 0 });
+    render(
+      <MemoryRouter initialEntries={["/studio/unreplied"]}>
+        <Routes><Route element={<Outlet context={{ liveMode: false }} />}>
+          <Route path="/studio/unreplied" element={<FeedbackListPage view="unreplied" />} />
+        </Route></Routes>
+      </MemoryRouter>,
+    );
+    await screen.findByText("这里暂时是空的");
+    const poll = intervalSpy.mock.calls.find(([, delay]) => delay === 20_000)?.[0];
+    await act(async () => {
+      if (typeof poll === "function") poll();
+      window.dispatchEvent(new Event("studio:changed"));
+    });
+    await screen.findByText("有 1 条新留言");
+    expect(mocks.getNewCount).toHaveBeenCalledWith(expect.objectContaining({ createdAt: 0 }), null, expect.any(AbortSignal));
+    expect(mocks.getStats).toHaveBeenCalledTimes(2);
+    expect(mocks.getFeedbacks).toHaveBeenCalledTimes(1);
+  });
 });

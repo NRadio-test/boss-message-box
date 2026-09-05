@@ -1,6 +1,7 @@
 import { env } from "cloudflare:workers";
 import { beforeEach, describe, expect, it } from "vitest";
 import { D1FeedbackRepository, D1OtpRepository } from "../../worker/infra/d1-repositories";
+import { D1ModerationJobRepository } from "../../worker/infra/d1-moderation-jobs";
 
 const PHONE_HASH = "test-phone-hmac-not-a-phone";
 
@@ -131,8 +132,10 @@ describe("D1 feedback repository", () => {
     const repository = new D1FeedbackRepository(env.BOSS_MESSAGE_DB);
     const feedbackId = crypto.randomUUID();
     await repository.create(feedbackInput({ now, id: feedbackId }));
+    const job = (await new D1ModerationJobRepository(env.BOSS_MESSAGE_DB).claim({ feedbackId, now }))!;
     await repository.setModerationResult({
       feedbackId,
+      attemptToken: job.attemptToken,
       status: "filtered",
       category: "abusive",
       reason: "包含辱骂内容",

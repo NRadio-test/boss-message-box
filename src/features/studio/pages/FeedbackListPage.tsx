@@ -32,6 +32,11 @@ function readTopic(value: string | null): Topic | null {
   return value && TOPIC_VALUES.some((topic) => topic === value) ? value as Topic : null;
 }
 
+const EMPTY_SNAPSHOT: StudioSnapshot = {
+  createdAt: 0,
+  id: "00000000-0000-4000-8000-000000000000",
+};
+
 export function FeedbackListPage({ view }: { view: StudioFeedbackView }) {
   const { liveMode } = useOutletContext<StudioOutletContext>();
   const location = useLocation();
@@ -63,6 +68,7 @@ export function FeedbackListPage({ view }: { view: StudioFeedbackView }) {
     const controller = new AbortController();
     getStudioFeedbacks(view, page, topic, snapshot, controller.signal)
       .then((value) => {
+        if (controller.signal.aborted) return;
         setResult(value);
         setError(null);
         if (!snapshot && value.snapshot) {
@@ -83,25 +89,30 @@ export function FeedbackListPage({ view }: { view: StudioFeedbackView }) {
         if (!controller.signal.aborted) setError(reason instanceof Error ? reason.message : "留言列表加载失败");
       });
     return () => controller.abort();
-  }, [page, reload, restoreContext, searchString, setSearchParams, snapshot, topic, view]);
+  }, [liveMode, page, reload, restoreContext, searchString, setSearchParams, snapshot, topic, view]);
 
   useEffect(() => {
-    if (view !== "unreplied" || !snapshot) return;
+    if (view !== "unreplied") return;
     let controller: AbortController | null = null;
     const poll = () => {
       if (document.visibilityState !== "visible") return;
       controller?.abort();
-      controller = new AbortController();
-      void getNewStudioFeedbackCount(snapshot, topic, controller.signal)
-        .then((value) => setNewCount(value.count))
+      const requestController = new AbortController();
+      controller = requestController;
+      void getNewStudioFeedbackCount(snapshot ?? EMPTY_SNAPSHOT, topic, requestController.signal)
+        .then((value) => {
+          if (!requestController.signal.aborted) setNewCount(value.count);
+        })
         .catch(() => undefined);
     };
     const interval = window.setInterval(poll, 20_000);
+    document.addEventListener("visibilitychange", poll);
     return () => {
       window.clearInterval(interval);
+      document.removeEventListener("visibilitychange", poll);
       controller?.abort();
     };
-  }, [snapshot, topic, view]);
+  }, [liveMode, snapshot, topic, view]);
 
   const changeTopic = (nextTopic: string) => {
     const next = new URLSearchParams(searchParams);
@@ -203,7 +214,7 @@ export function FeedbackListPage({ view }: { view: StudioFeedbackView }) {
       )}
       {!error && result && result.items.length > 0 && (
         <div className="studio-feedback-grid">
-          {result.items.map((item) => (
+          {result.items.filter((item) => !liveMode || item.moderationStatus === "kept" || item.moderationStatus === "failed").map((item) => (
             <FeedbackCard
               key={item.id}
               item={item}

@@ -8,16 +8,32 @@ export function StudioStats() {
   const [reload, setReload] = useState(0);
 
   useEffect(() => {
-    const controller = new AbortController();
-    getStudioStats(controller.signal)
-      .then((value) => {
-        setStats(value);
-        setFailed(false);
-      })
-      .catch(() => {
-        if (!controller.signal.aborted) setFailed(true);
-      });
-    return () => controller.abort();
+    let controller: AbortController | null = null;
+    const refresh = () => {
+      if (document.visibilityState === "hidden") return;
+      controller?.abort();
+      const requestController = new AbortController();
+      controller = requestController;
+      void getStudioStats(requestController.signal)
+        .then((value) => {
+          if (requestController.signal.aborted) return;
+          setStats(value);
+          setFailed(false);
+        })
+        .catch(() => {
+          if (!requestController.signal.aborted) setFailed(true);
+        });
+    };
+    refresh();
+    const interval = window.setInterval(refresh, 30_000);
+    window.addEventListener("studio:changed", refresh);
+    document.addEventListener("visibilitychange", refresh);
+    return () => {
+      controller?.abort();
+      window.clearInterval(interval);
+      window.removeEventListener("studio:changed", refresh);
+      document.removeEventListener("visibilitychange", refresh);
+    };
   }, [reload]);
 
   if (failed) {

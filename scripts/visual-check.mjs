@@ -1,8 +1,30 @@
 import { chromium } from "@playwright/test";
+import { existsSync } from "node:fs";
+
+async function mockStudio(page) {
+  let authenticated = false;
+  let mode = "normal";
+  const item = { id: "11111111-1111-4111-8111-111111111111", feedbackNumber: "11111111", userId: null, nickname: "界面测试", topic: "released_hardware", customTopic: null, content: "测试留言", contentPreview: "测试留言", imageCount: 0, images: [], maskedPhone: null, createdAt: 1000, status: "unreplied", isTodo: false, replyCount: 0, latestReplyAdmin: null, replies: [], moderationStatus: "kept", moderationCategory: "valid_feedback", moderationReason: null };
+  await page.route("**/api/config", (route) => route.fulfill({ json: { turnstileSiteKey: "1x00000000000000000000AA", privacyPolicyVersion: "2026-09-05", livestreamPolicyVersion: "2026-09-05" } }));
+  await page.route("**/api/studio/**", async (route) => {
+    const path = new URL(route.request().url()).pathname;
+    if (path.endsWith("/login")) authenticated = true;
+    if (!authenticated) return route.fulfill({ status: 401, json: { ok: false, error: { message: "请登录" } } });
+    if (path.endsWith("/session/mode")) mode = route.request().postDataJSON().mode;
+    if (path.endsWith("/session") || path.endsWith("/session/mode") || path.endsWith("/login")) return route.fulfill({ json: { ok: true, admin: { id: "fixture", username: "测试管理员" }, mode, expiresAt: Date.now() + 86_400_000 } });
+    if (path.endsWith("/logout")) { authenticated = false; return route.fulfill({ json: { ok: true } }); }
+    if (path.endsWith("/stats")) return route.fulfill({ json: { ok: true, todayFeedback: 1, unreplied: 1, todo: 0, todayReplied: 0 } });
+    if (path.endsWith("/new-feedback-count")) return route.fulfill({ json: { ok: true, count: 0 } });
+    if (path.endsWith("/feedbacks")) return route.fulfill({ json: { ok: true, items: [item], pagination: { page: 1, pageSize: 30, total: 1, totalPages: 1 }, snapshot: { createdAt: item.createdAt, id: item.id } } });
+    if (path.endsWith("/next")) return route.fulfill({ json: { ok: true, nextFeedbackId: null } });
+    if (path.endsWith(`/feedbacks/${item.id}`)) return route.fulfill({ json: { ok: true, item } });
+    return route.fulfill({ status: 404, json: { ok: false, error: { message: "未配置的测试请求" } } });
+  });
+}
 
 const browser = await chromium.launch({
   headless: true,
-  executablePath: "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
+  executablePath: process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH ?? (existsSync("/Applications/Google Chrome.app/Contents/MacOS/Google Chrome") ? "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" : undefined),
 });
 const results = [];
 
@@ -18,6 +40,7 @@ try {
       reducedMotion: "reduce",
     });
     const page = await context.newPage();
+    await mockStudio(page);
     const failures = [];
     page.on("pageerror", (error) => failures.push(`pageerror: ${error.message}`));
     page.on("console", (message) => {
@@ -71,7 +94,7 @@ try {
     await page.goto("http://127.0.0.1:5173/studio", { waitUntil: "networkidle" });
     await page.getByRole("heading", { name: "登录 Studio" }).waitFor();
     await page.getByLabel("账号").fill("zd");
-    await page.getByLabel("密码").fill("admin");
+    await page.getByLabel("密码").fill("visual-test-password");
     await page.getByRole("button", { name: "登录" }).click();
     await page.getByRole("heading", { name: "未回复留言" }).waitFor();
     await page.locator(".studio-feedback-card, .studio-empty").first().waitFor();
@@ -105,6 +128,14 @@ try {
       await page.getByRole("heading", { name: "未回复留言" }).waitFor();
     }
 
+    await page.goto("http://127.0.0.1:5173/studio/password", { waitUntil: "networkidle" });
+    await page.getByRole("heading", { name: "修改密码" }).waitFor();
+    const passwordOverflow = await page.evaluate(() => document.documentElement.scrollWidth > document.documentElement.clientWidth);
+    if (passwordOverflow) failures.push("password form has horizontal overflow");
+    await page.screenshot({ path: `/private/tmp/boss-message-box-password-${viewport.name}.png`, fullPage: true });
+    await page.goto("http://127.0.0.1:5173/studio/unreplied", { waitUntil: "networkidle" });
+    await page.getByRole("heading", { name: "未回复留言" }).waitFor();
+
     if (viewport.width < 1024) {
       await page.locator(".studio-mobile-menu > summary").click();
       await page.locator(".studio-mobile-menu[open] .studio-logout-row").click();
@@ -133,6 +164,7 @@ try {
 
   const context = await browser.newContext({ viewport: { width: 375, height: 700 } });
   const page = await context.newPage();
+  await mockStudio(page);
   await page.route("https://challenges.cloudflare.com/turnstile/v0/api.js*", (route) =>
     route.fulfill({
       contentType: "application/javascript",
@@ -144,7 +176,6 @@ try {
   await page.getByRole("textbox", { name: /请填写留言主题/ }).fill("试用建议");
   await page.getByRole("textbox", { name: /留言内容/ }).fill("希望直播中讲一下设置方法。");
   await page.getByRole("textbox", { name: /抖音昵称/ }).fill("测试观众");
-  await page.getByRole("textbox", { name: /手机号/ }).fill("13800138000");
   await page.getByRole("button", { name: "《隐私政策》" }).click();
   await page.getByRole("dialog").waitFor();
   console.log(

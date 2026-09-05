@@ -24,6 +24,7 @@ export const studioLoginSchema = z.object({
 export const studioModeUpdateSchema = z.object({ mode: studioModeSchema });
 
 export const studioReplyCreateSchema = z.object({
+  requestKey: z.string().uuid().optional(),
   replyType: studioReplyTypeSchema.optional(),
   content: z.string().trim().min(1, "请填写回复内容").max(2000, "回复内容不能超过 2000 个字符"),
 });
@@ -32,6 +33,13 @@ export const studioSearchSchema = z.object({
   query: z.string().trim().min(1, "请输入搜索内容").max(100, "搜索内容不能超过 100 个字符"),
   page: z.number().int().min(1).max(10_000).optional().default(1),
   snapshot: z.object({ createdAt: z.number().int().nonnegative(), id: z.string().uuid() }).nullable().optional(),
+});
+
+export const studioPasswordSchema = z.object({
+  currentPassword: z.string().min(1, "请输入当前密码").max(200),
+  newPassword: z.string().min(12, "新密码至少需要 12 个字符").max(200, "新密码不能超过 200 个字符"),
+}).refine((value) => value.currentPassword !== value.newPassword, {
+  path: ["newPassword"], message: "新密码不能与当前密码相同",
 });
 
 export type StudioMode = z.infer<typeof studioModeSchema>;
@@ -174,5 +182,5 @@ export interface StudioNewFeedbackCountSuccess {
 }
 
 export interface StudioSearchSuccess extends StudioFeedbackListSuccess {
-  queryType: "phone" | "feedback_number" | "nickname";
+  queryType: "phone" | "feedback_number" | "nickname" | "combined";
 }
