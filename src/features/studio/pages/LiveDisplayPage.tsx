@@ -1,13 +1,14 @@
-import { useCallback, useEffect, useRef, useState } from "react";
-import { Link, useNavigate, useOutletContext, useSearchParams } from "react-router-dom";
+import { useCallback, useEffect, useMemo, useRef, useState, type MouseEvent } from "react";
+import { useLocation, useNavigate, useOutletContext, useSearchParams } from "react-router-dom";
 import { Button } from "../../../components/Button";
 import { createRandomUuid } from "../../../lib/random-id";
-import { TOPIC_LABELS } from "../../../shared/contracts";
 import type { LiveBatch, LiveListSuccess, LiveMoveInput } from "../../../shared/live-contracts";
 import { STUDIO_PAGE_SIZE } from "../../../shared/studio-contracts";
 import { getLiveBatches, getLiveEntries, getLiveSequence, rotateLiveBatch, removeLiveEntry, moveLiveEntry } from "../live-api";
 import { StudioApiError } from "../api";
 import { LiveOrderControl } from "../components/LiveOrderControl";
+import { LiveEntryCard } from "../components/LiveEntryCard";
+import { captureReturnContext, loadListReturn, saveListReturn, restoreListPosition, type StudioReturnContext } from "../navigation-context";
 import { resetLiveSequence } from "../live-sequence";
 import { StudioEmpty, StudioError, StudioLoading } from "../components/AsyncState";
 import { ConfirmDialog } from "../components/ConfirmDialog";
@@ -20,11 +21,18 @@ export function LiveDisplayPage() {
   const { liveMode } = useOutletContext<StudioOutletContext>();
   const [query, setQuery] = useSearchParams();
   const navigate = useNavigate();
+  const location = useLocation();
+  const historyKey = `${location.key}:${location.pathname}${location.search}`;
+  const restoreContext = useMemo(() => (location.state as { restoreContext?: StudioReturnContext } | null)?.restoreContext
+    ?? loadListReturn(historyKey), [historyKey, location.state]);
+  const restored = useRef<string | null>(null);
+  const [expandedState, setExpandedState] = useState<{ key: string; ids: string[] } | null>(null);
   const batchId = liveMode ? null : query.get("batch");
   const page = Math.max(1, Number(query.get("page")) || 1);
   const resultKey = `${batchId ?? "current"}:${page}:${liveMode}`;
   const [loaded, setLoaded] = useState<{ key: string; result: LiveListSuccess } | null>(null);
   const result = loaded?.key === resultKey ? loaded.result : null;
+  const expandedIds = expandedState?.key === resultKey ? expandedState.ids : restoreContext?.expandedIds ?? [];
   const [batches, setBatches] = useState<LiveBatch[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
@@ -40,6 +48,27 @@ export function LiveDisplayPage() {
   const archived = result?.batch.status === "archived";
   const changed = useCallback(() => setReload(n => n + 1), []);
   const controlsDisabled = busy || Boolean(orderIssue);
+  useEffect(() => {
+    if (!result || liveMode || !restoreContext || restored.current === location.key) return;
+    if (restoreContext.batchId && restoreContext.batchId !== result.batch.id) return;
+    const frame = requestAnimationFrame(() => {
+      restoreListPosition(restoreContext);
+      restored.current = location.key;
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [result, liveMode, restoreContext, location.key]);
+  const openEntry = (event: MouseEvent<HTMLAnchorElement>, target: string, element: HTMLElement | null, entryId: string) => {
+    if (!result) return;
+    const returnQuery = new URLSearchParams(query);
+    returnQuery.set("batch", result.batch.id);
+    const context: StudioReturnContext = { ...captureReturnContext(`/studio/live-display?${returnQuery}`, entryId,
+      result.items.map(item => item.id), element), expandedIds, batchId: result.batch.id };
+    saveListReturn(historyKey, context);
+    if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+    event.preventDefault();
+    navigate(target, { state: { returnContext: context } });
+    window.scrollTo({ top: 0, behavior: "instant" });
+  };
   useEffect(() => {
     const focus = restoreOrderFocus.current;
     if (busy || !focus || !result?.items.some(item => item.id === focus.entryId)) return;
@@ -129,7 +158,7 @@ export function LiveDisplayPage() {
     <header className="studio-page-heading"><div><h1>直播展示</h1><p>{liveMode ? "只播放当前活动批次。" : "按序号播放，调整后自动保存；新加入的留言排在末尾。"}</p></div>
       {!liveMode && <div className="studio-list-controls"><label className="studio-topic-filter">直播批次
         <select aria-label="按直播批次筛选" disabled={busy} value={batchId ?? ""} onChange={event => setFilter("batch", event.target.value)}>
-          <option value="">当前批次</option>{batches.filter(b => b.status === "archived").map(b => <option key={b.id} value={b.id}>{batchTime(b.archivedAt!)} 刷新</option>)}
+          <option value={batchId && result?.batch.id === batchId && !archived ? batchId : ""}>当前批次</option>{batches.filter(b => b.status === "archived").map(b => <option key={b.id} value={b.id}>{batchTime(b.archivedAt!)} 刷新</option>)}
         </select></label></div>}
     </header>
     {!liveMode && result && !archived && <div className="studio-list-controls studio-live-tools">
@@ -147,22 +176,18 @@ export function LiveDisplayPage() {
     {!result && !error && <StudioLoading label="正在加载直播批次" />}
     {result && <p className="studio-total">共 {result.total} 条</p>}
     {result?.items.length === 0 && <StudioEmpty title={archived ? "这个归档批次没有留言" : "当前直播展示组为空"} description={liveMode ? "等待工作人员从待分流加入留言，画面将自动更新。" : "请从待分流加入观众留言或已分类的 Excel 行。"} />}
-    {result && !liveMode && <ol role="list" className="studio-feedback-grid studio-live-ordered-list" aria-label="直播展示顺序" start={(result.page - 1) * STUDIO_PAGE_SIZE + 1}>{result.items.map((item, index) => <li key={item.id}><article className="studio-feedback-card studio-live-row" data-feedback-id={item.id}>
+    {result && !liveMode && <ol role="list" className="studio-feedback-grid studio-live-ordered-list" aria-label="直播展示顺序" start={(result.page - 1) * STUDIO_PAGE_SIZE + 1}>{result.items.map((item, index) => <li key={item.id}>
+      <LiveEntryCard item={item} batchId={result.batch.id} archived={Boolean(archived)} disabled={controlsDisabled}
+        expanded={expandedIds.includes(item.id)}
+        onExpand={() => setExpandedState({ key: resultKey, ids: expandedIds.includes(item.id) ? expandedIds.filter(id => id !== item.id) : [...expandedIds, item.id] })}
+        onOpen={(event, target, element) => openEntry(event, target, element, item.id)} onRemove={() => void remove(item.id)}>
       {archived ? <div className="studio-live-slot">
         <span className="studio-live-slot-number" aria-hidden="true">{(result.page - 1) * STUDIO_PAGE_SIZE + index + 1}</span>
         <span className="sr-only">第 {(result.page - 1) * STUDIO_PAGE_SIZE + index + 1} 条</span>
       </div>
         : <LiveOrderControl nickname={item.nickname} position={(result.page - 1) * STUDIO_PAGE_SIZE + index + 1}
           total={result.total} disabled={controlsDisabled} saving={movingId === item.id} onMove={position => void move(item.id, position)} />}
-      <div className="studio-feedback-card-main"><p>{item.sourceType === "imported" ? "Excel 导入" : "观众提交"} · {item.topic === "other" ? item.customTopic : TOPIC_LABELS[item.topic]}</p>
-        <h2>{item.nickname}</h2><p className="studio-live-entry-content">{item.content}</p>
-        <p>{item.sourceType === "imported" ? `导入于 ${batchTime(item.addedAt)} · ${item.filename} · 第 ${item.importRowNumber} 行` : `提交于 ${batchTime(item.createdAt)}`}</p>
-        {item.feedbackId && <Link to={`/studio/feedback/${item.feedbackId}?view=live_display`} state={{ returnContext: { url: `/studio/live-display?${query}` } }}>查看原留言与回复</Link>}
-        {item.sourceType === "imported" && <Link to={`/studio/live-display/${item.id}?batch=${result.batch.id}`} state={{ returnContext: { url: `/studio/live-display?${query}` } }}>查看留言详情</Link>}
-        {item.imageCount > 0 && <p>{item.imageCount} 张图片（原留言中查看）</p>}
-        {!archived && <Button type="button" variant="quiet" disabled={controlsDisabled} onClick={() => void remove(item.id)}>取消直播展示</Button>}
-      </div>
-    </article></li>)}</ol>}
+      </LiveEntryCard></li>)}</ol>}
     {!liveMode && result && result.totalPages > 1 && <nav className="studio-pagination" aria-label="直播留言分页">
       <Button type="button" variant="quiet" disabled={controlsDisabled || page <= 1} onClick={() => setFilter("page", String(page - 1))}>上一页</Button>
       <span>{page} / {result.totalPages}</span>

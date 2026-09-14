@@ -90,7 +90,7 @@ liveRoutes.get("/entries", async c => {
   const repo = new D1LiveRepository(c.env.BOSS_MESSAGE_DB);
   const batch = await repo.batch(q.batchId);
   if (c.get("studioSession").mode === "live") await repo.requireActive(batch.id);
-  return c.json(await repo.list(batch.id, q.page));
+  return c.json(await repo.list(batch.id, q.page, c.get("studioSession").mode === "normal"));
 });
 liveRoutes.get("/entries/:entryId", async c => {
   const id = parse(uuid, c.req.param("entryId"));

@@ -95,6 +95,8 @@ const checks = [
   ["删除回复 / 悬停底色", "danger", "surfaceHover", 4.5],
   ["确认删除 / 危险操作底色", "danger", "dangerSurface", 4.5],
   ["成功文字 / 表单面板", "success", "surface", 4.5],
+  ["已回复标签 / 绿色底色", "success", "successSurface", 4.5],
+  ["未回复标签 / 抬升底色", "warning", "surfaceRaised", 4.5],
   ["状态文字 / 表单面板", "neutralStatus", "surface", 4.5],
 ];
 

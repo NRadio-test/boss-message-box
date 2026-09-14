@@ -373,6 +373,18 @@
   color: var(--color-danger);
 }
 .studio-live-entry-content { white-space: pre-wrap; overflow-wrap: anywhere; font-size: var(--type-body); }
+.studio-live-entry-content.is-collapsed { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 3; line-clamp: 3; overflow: hidden; }
+.studio-live-card-topline { display: flex; align-items: center; justify-content: space-between; gap: var(--space-3); flex-wrap: wrap; }
+.studio-live-card-topline > p { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+.studio-live-card-topline .studio-status { flex-shrink: 0; white-space: nowrap; }
+.studio-live-status-unreplied { background: var(--color-surface-raised); color: var(--color-warning); }
+.studio-live-card-link { color: inherit; text-decoration: none; }
+.studio-live-card-link::after { content: ""; position: absolute; inset: 0; border-radius: inherit; }
+.studio-live-card-link:focus-visible::after { outline: 3px solid var(--color-accent); outline-offset: -3px; }
+.studio-live-card-link[aria-disabled="true"] { cursor: wait; }
+.studio-live-card-action, .studio-live-row .studio-live-slot { position: relative; z-index: 1; }
+.studio-live-expand { justify-self: start; }
+.studio-live-remove { justify-self: end; }
 /*
  * Live queue rows. The sequence number and its handles live in a recessed gutter on the leading
  * edge, so the row keeps a single card surface instead of stacking a toolbar on top of it. The
@@ -380,7 +392,7 @@
  */
 .studio-live-display-page .studio-live-ordered-list { grid-template-columns: minmax(0, 1fr); list-style: none; padding: 0; }
 .studio-live-ordered-list > li { min-width: 0; }
-.studio-live-display-page .studio-live-row { display: flex; align-items: stretch; }
+.studio-live-display-page .studio-live-row { position: relative; display: flex; align-items: stretch; }
 .studio-live-display-page .studio-live-row > .studio-feedback-card-main { flex: 1 1 auto; min-width: 0; }
 .studio-live-slot {
   display: flex;

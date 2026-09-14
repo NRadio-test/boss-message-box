@@ -78,8 +78,9 @@ describe("routing and live-batch interfaces", () => {
     expect(fetch.mock.calls.some(([, init]) => init?.method === "POST")).toBe(false);
   });
   it("opens an imported historical snapshot and retains batch and page on return", async () => {
+    vi.stubGlobal("scrollTo", vi.fn());
     const { fetch } = mockApi(true); const user = userEvent.setup(); setup(`/studio/live-display?batch=${old.id}&page=2`);
-    await user.click(await screen.findByRole("link", { name: "查看留言详情" }));
+    await user.click(await screen.findByRole("link", { name: "查看导入昵称的留言详情" }));
     expect(await screen.findByText("留言正文")).toBeInTheDocument();
     expect(fetch.mock.calls.some(([url]) => String(url).includes(`/live/entries/${item.id}?batchId=${old.id}`))).toBe(true);
     await user.click(screen.getByRole("link", { name: "返回列表" }));

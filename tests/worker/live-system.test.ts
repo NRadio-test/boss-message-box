@@ -41,6 +41,21 @@ beforeEach(async () => {
 });
 
 describe("separate moderation, routing, replies and live membership", () => {
+  it("returns real reply counts only for the management list, including after deletion", async () => {
+    const id = await seed(); await route(id, "selected");
+    expect((await live.list(initialBatch, 1, true)).items[0]).toMatchObject({ replyCount: 0, status: "unreplied" });
+    const replies = [crypto.randomUUID(), crypto.randomUUID()];
+    for (const replyId of replies) await studio.appendReply({ id: replyId, feedbackId: id, replyType: "message", content: "后台回复", admin: { id: adminId, username: "zd" }, now: 200 });
+    const entry = (await live.list(initialBatch, 1, true)).items[0]!;
+    expect(entry).toMatchObject({ replyCount: 2, status: "replied", replies: [], latestReplyAdmin: null });
+    expect(await live.entry(entry.id, initialBatch)).toMatchObject({ replyCount: 0, replies: [], status: "unreplied" });
+    expect((await live.list(initialBatch, 1)).items[0]?.replyCount).toBe(0);
+    await studio.deleteReply({ feedbackId: id, replyId: replies[0]!, adminId, now: 300 });
+    expect((await live.list(initialBatch, 1, true)).items[0]?.replyCount).toBe(1);
+    await studio.deleteReply({ feedbackId: id, replyId: replies[1]!, adminId, now: 400 });
+    expect((await live.list(initialBatch, 1, true)).items[0]).toMatchObject({ replyCount: 0, status: "unreplied" });
+    expect(await live.activeMembership(id)).toBe(true);
+  });
   it("keeps approved submissions in routing until a human selects or declines", async () => {
     const selected = await seed(); const declined = await seed();
     expect((await list("routing")).items).toHaveLength(2);
@@ -435,6 +450,11 @@ describe("live API permission boundary", () => {
     expect((await request(movePath, "POST", { ...moveInput, adminId: "forged-admin" })).status).toBe(400);
     const moved = await request(movePath, "POST", moveInput);
     expect(moved.status).toBe(200); expect(moved.headers.get("Cache-Control")).toBe("private, no-store");
+    await studio.appendReply({ id: crypto.randomUUID(), feedbackId: id, replyType: "message", content: "回复状态测试", admin: { id: adminId, username: "zd" }, now: 1500 });
+    expect(await (await request(`/live/entries?batchId=${initialBatch}`)).json()).toMatchObject({ items: expect.arrayContaining([expect.objectContaining({ feedbackId: id, replyCount: 1, status: "replied" })]) });
+    await db.prepare("UPDATE admin_sessions SET mode = 'live'").run();
+    expect(await (await request(`/live/entries?batchId=${initialBatch}`)).json()).toMatchObject({ items: expect.arrayContaining([expect.objectContaining({ feedbackId: id, replyCount: 0, replies: [] })]) });
+    await db.prepare("UPDATE admin_sessions SET mode = 'normal'").run();
     const archived = await live.rotate({ batchId: initialBatch, requestKey: crypto.randomUUID(), adminId, now: 2000 });
     const normalHistory = await request(`/live/entries?batchId=${initialBatch}`);
     expect(normalHistory.status).toBe(200); expect(normalHistory.headers.get("Cache-Control")).toBe("private, no-store");

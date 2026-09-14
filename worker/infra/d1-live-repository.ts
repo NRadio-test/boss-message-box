@@ -9,6 +9,7 @@ interface EntryRow {
   nickname: string; content: string; topic: LiveEntry["topic"]; custom_topic: string | null;
   source_created_at: number; import_order: number; added_at: number; filename: string | null; import_row_number: number | null;
   queue_group: number; sort_order: number;
+  reply_count?: number;
 }
 const batchSelect = `SELECT b.*, (SELECT COUNT(*) FROM live_entries e WHERE e.batch_id = b.id AND e.removed_at IS NULL) AS count FROM live_batches b`;
 const entrySelect = `SELECT e.*, j.filename FROM live_entries e LEFT JOIN live_import_jobs j ON j.id = e.import_job_id`;
@@ -31,9 +32,10 @@ export class D1LiveRepository {
     if (batch.status !== "active") throw new PublicError(409, "REQUEST_CONFLICT", "直播批次已刷新，请重新打开当前批次");
     return batch;
   }
-  async list(id: string | undefined, page: number): Promise<LiveListSuccess> {
+  async list(id: string | undefined, page: number, includeReplyStatus = false): Promise<LiveListSuccess> {
     const batch = await this.batch(id);
-    const rows = await this.db.prepare(`${entrySelect} WHERE e.batch_id = ? AND e.removed_at IS NULL
+    const select = includeReplyStatus ? entrySelect.replace("SELECT e.*", "SELECT (SELECT COUNT(*) FROM feedback_replies r WHERE r.feedback_id = e.feedback_id) AS reply_count, e.*") : entrySelect;
+    const rows = await this.db.prepare(`${select} WHERE e.batch_id = ? AND e.removed_at IS NULL
       ORDER BY ${liveEntryOrder("e.")} LIMIT ? OFFSET ?`)
       .bind(batch.id, STUDIO_PAGE_SIZE, (page - 1) * STUDIO_PAGE_SIZE).all<EntryRow>();
     return { ok: true, batch, items: await Promise.all(rows.results.map(r => this.mapEntry(r))),
@@ -57,8 +59,8 @@ export class D1LiveRepository {
       createdAt: r.source_created_at, importOrder: r.import_order, addedAt: r.added_at,
       queueGroup: r.queue_group, sortOrder: r.sort_order,
       filename: r.filename, importRowNumber: r.import_row_number, imageCount: images.length,
-      images, replies: [], replyCount: 0, latestReplyAdmin: null,
-      status: "unreplied", isTodo: false, maskedPhone: null, shopPhone: null,
+      images, replies: [], replyCount: Number(r.reply_count ?? 0), latestReplyAdmin: null,
+      status: r.reply_count ? "replied" : "unreplied", isTodo: false, maskedPhone: null, shopPhone: null,
       moderationStatus: "kept", moderationCategory: null, moderationReason: null, liveSelected: true,
     };
   }

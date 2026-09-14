@@ -3,10 +3,27 @@ export interface StudioReturnContext {
   anchorId?: string;
   neighborIds?: string[];
   anchorOffset?: number;
+  expandedIds?: string[];
+  batchId?: string;
   search?: { query: string; page: number; snapshot?: { createdAt: number; id: string } | null };
 }
 
 const LIVE_RETURN_KEY = "boss-message-box:studio:live-return:v1";
+const LIST_RETURN_KEY = "boss-message-box:studio:list-return:v1";
+
+export function loadListReturn(key: string): StudioReturnContext | null {
+  try {
+    const entries = JSON.parse(sessionStorage.getItem(LIST_RETURN_KEY) ?? "[]") as Array<[string, StudioReturnContext]>;
+    return entries.find(entry => entry[0] === key)?.[1] ?? null;
+  } catch { return null; }
+}
+
+export function saveListReturn(key: string, context: StudioReturnContext): void {
+  try {
+    const entries = JSON.parse(sessionStorage.getItem(LIST_RETURN_KEY) ?? "[]") as Array<[string, StudioReturnContext]>;
+    sessionStorage.setItem(LIST_RETURN_KEY, JSON.stringify([...entries.filter(entry => entry[0] !== key).slice(-19), [key, context]]));
+  } catch { /* Explicit detail return state still works when storage is unavailable. */ }
+}
 
 export function captureReturnContext(
   url: string,
