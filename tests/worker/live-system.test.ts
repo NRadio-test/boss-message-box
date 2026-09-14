@@ -41,6 +41,22 @@ beforeEach(async () => {
 });
 
 describe("separate moderation, routing, replies and live membership", () => {
+  it("removes by feedback id idempotently, preserving content/replies and never changing a successor batch", async () => {
+    const id = await seed(); await route(id, "selected");
+    await studio.appendReply({ id: crypto.randomUUID(), feedbackId: id, replyType: "message", content: "保留回复", admin: { id: adminId, username: "zd" }, now: 150 });
+    await db.prepare("UPDATE feedback SET is_todo = 1 WHERE id = ?").bind(id).run();
+    const input = { feedbackId: id, batchId: initialBatch, requestKey: crypto.randomUUID(), adminId, now: 200 };
+    await live.removeFeedback(input); await live.removeFeedback(input);
+    expect(await studio.getFeedbackSummary(id)).toMatchObject({ liveSelected: false, routingStatus: "pending", isTodo: false, replyCount: 1 });
+    expect(await db.prepare("SELECT content, moderation_status FROM feedback WHERE id = ?").bind(id).first()).toEqual({ content: "原始留言", moderation_status: "kept" });
+    expect(await db.prepare("SELECT COUNT(*) AS count FROM live_audit_logs WHERE request_key = ?").bind(input.requestKey).first()).toEqual({ count: 1 });
+    const next = await live.rotate({ batchId: initialBatch, requestKey: crypto.randomUUID(), adminId, now: 300 });
+    await route(id, "selected", next.id);
+    await live.removeFeedback(input);
+    expect(await live.activeMembership(id)).toBe(true);
+    await expect(live.removeFeedback({ ...input, requestKey: crypto.randomUUID() })).rejects.toMatchObject({ status: 409 });
+    await expect(live.removeFeedback({ ...input, feedbackId: await seed(), batchId: next.id })).rejects.toMatchObject({ status: 409 });
+  });
   it("returns real reply counts only for the management list, including after deletion", async () => {
     const id = await seed(); await route(id, "selected");
     expect((await live.list(initialBatch, 1, true)).items[0]).toMatchObject({ replyCount: 0, status: "unreplied" });
@@ -420,6 +436,16 @@ describe("live API permission boundary", () => {
     expect((await request(`/live/routing/${id}`, "POST", input, { ...headers, Origin: "https://evil.example" })).status).toBe(403);
     expect((await request(`/live/routing/${id}`, "POST", { ...input, routingStatus: "invalid" })).status).toBe(400);
     expect((await request(`/live/routing/${id}`, "POST", input)).status).toBe(200);
+    const removePath = `/live/routing/${id}/remove`;
+    const removeInput = { batchId: initialBatch, requestKey: crypto.randomUUID() };
+    expect((await SELF.fetch(`${origin}/api/studio${removePath}`, { method: "POST", headers: { Origin: origin, "Content-Type": "application/json" }, body: JSON.stringify(removeInput) })).status).toBe(401);
+    expect((await request(removePath, "POST", removeInput, { ...headers, Origin: "https://evil.example" })).status).toBe(403);
+    expect((await request(removePath, "POST", { ...removeInput, adminId: "forged-admin" })).status).toBe(400);
+    const removed = await request(removePath, "POST", removeInput);
+    expect(removed.status).toBe(200); expect(removed.headers.get("Cache-Control")).toBe("private, no-store");
+    expect((await request(removePath, "POST", removeInput)).status).toBe(200);
+    expect(await live.activeMembership(id)).toBe(false);
+    expect((await request(`/live/routing/${id}`, "POST", { ...input, requestKey: crypto.randomUUID() })).status).toBe(200);
     const { default: ExcelJS } = await import("exceljs");
     const workbook = new ExcelJS.Workbook(); const sheet = workbook.addWorksheet("留言");
     sheet.addRow(["用户名", "用户留言", "无关列"]); sheet.addRow(["导入者", "导入正文", "不保存"]);
@@ -453,6 +479,7 @@ describe("live API permission boundary", () => {
     await studio.appendReply({ id: crypto.randomUUID(), feedbackId: id, replyType: "message", content: "回复状态测试", admin: { id: adminId, username: "zd" }, now: 1500 });
     expect(await (await request(`/live/entries?batchId=${initialBatch}`)).json()).toMatchObject({ items: expect.arrayContaining([expect.objectContaining({ feedbackId: id, replyCount: 1, status: "replied" })]) });
     await db.prepare("UPDATE admin_sessions SET mode = 'live'").run();
+    expect((await request(removePath, "POST", { ...removeInput, requestKey: crypto.randomUUID() })).status).toBe(403);
     expect(await (await request(`/live/entries?batchId=${initialBatch}`)).json()).toMatchObject({ items: expect.arrayContaining([expect.objectContaining({ feedbackId: id, replyCount: 0, replies: [] })]) });
     await db.prepare("UPDATE admin_sessions SET mode = 'normal'").run();
     const archived = await live.rotate({ batchId: initialBatch, requestKey: crypto.randomUUID(), adminId, now: 2000 });

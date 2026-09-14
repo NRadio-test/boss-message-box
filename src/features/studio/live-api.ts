@@ -24,6 +24,11 @@ export async function routeLiveFeedback(id: string, input: { batchId: string; re
   window.dispatchEvent(new Event("studio:changed"));
   return result;
 }
+export async function removeLiveFeedback(feedbackId: string, input: { batchId: string; requestKey: string }) {
+  const result = await studioRequest<{ ok: true }>(`/api/studio/live/routing/${encodeURIComponent(feedbackId)}/remove`, post(input));
+  window.dispatchEvent(new Event("studio:changed"));
+  return result;
+}
 export async function rotateLiveBatch(batchId: string, requestKey: string) {
   const result = await studioRequest<{ ok: true; batch: LiveBatch }>("/api/studio/live/rotate", post({ batchId, requestKey }));
   window.dispatchEvent(new Event("studio:batch-changed"));

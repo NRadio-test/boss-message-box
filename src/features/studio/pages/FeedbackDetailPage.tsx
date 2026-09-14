@@ -42,6 +42,7 @@ import {
 import { getActiveBatch } from "../live-api";
 import { LiveMessageText } from "../components/LiveMessageText";
 import { ReplyHistory } from "../components/ReplyHistory";
+import { LiveSelectionControl } from "../components/LiveSelectionControl";
 
 function formatDate(timestamp: number): string {
   return new Intl.DateTimeFormat("zh-CN", {
@@ -128,6 +129,7 @@ export function FeedbackDetailPage() {
   const [submitting, setSubmitting] = useState(false);
   const [deletingReply, setDeletingReply] = useState(false);
   const [moderationBusy, setModerationBusy] = useState(false);
+  const [liveSelectionPending, setLiveSelectionPending] = useState(false);
   const [navigationDirection, setNavigationDirection] = useState<StepDirection | null>(null);
   const navigationBusy = navigationDirection !== null;
   const [atEnd, setAtEnd] = useState(false);
@@ -199,6 +201,7 @@ export function FeedbackDetailPage() {
       // commits the previous navigation, and clearing it here would swallow the boundary
       // message the operator just triggered. It clears itself on the next successful step.
       setModerationNotice(null);
+      setLiveSelectionPending(false);
       setReplyContent("");
       setReplyType(null);
       setReplyError(null);
@@ -313,7 +316,7 @@ export function FeedbackDetailPage() {
   };
 
   const submitReply = async () => {
-    if (liveMode || !item || actionRef.current || !validateReply()) return;
+    if (liveMode || !item || actionRef.current || liveSelectionPending || !validateReply()) return;
     actionRef.current = true;
     setSubmitting(true);
     try {
@@ -372,7 +375,7 @@ export function FeedbackDetailPage() {
   };
 
   const deleteReply = async (replyId: string) => {
-    if (liveMode || actionRef.current || moderationBusy) throw new Error("请等待当前操作完成后重试");
+    if (liveMode || actionRef.current || moderationBusy || liveSelectionPending) throw new Error("请等待当前操作完成后重试");
     actionRef.current = true;
     setDeletingReply(true);
     try {
@@ -387,7 +390,7 @@ export function FeedbackDetailPage() {
   };
 
   const retryModeration = async () => {
-    if (!item || liveMode || moderationBusy || actionRef.current) return;
+    if (!item || liveMode || moderationBusy || actionRef.current || liveSelectionPending) return;
     setModerationBusy(true);
     setReplyError(null);
     try {
@@ -402,7 +405,7 @@ export function FeedbackDetailPage() {
   };
 
   const setFiltered = async (filtered: boolean) => {
-    if (!item || liveMode || moderationBusy || actionRef.current) return;
+    if (!item || liveMode || moderationBusy || actionRef.current || liveSelectionPending) return;
     setModerationBusy(true);
     setReplyError(null);
     try {
@@ -415,6 +418,8 @@ export function FeedbackDetailPage() {
           moderationCategory: null,
           moderationReason: filtered ? "manual_filter" : "manual_restore",
           isTodo: false,
+          liveSelected: false,
+          routingStatus: "pending",
           status: filtered
             ? "filtered"
             : current.item.replyCount > 0 ? "replied" : "unreplied",
@@ -729,25 +734,31 @@ export function FeedbackDetailPage() {
               )}
               {moderationNotice && <small role="status">{moderationNotice}</small>}
             </div>
-            {item.replyCount === 0 && (item.moderationStatus === "failed" || item.moderationStatus === "pending") && (
-              <Button type="button" variant="secondary" disabled={moderationBusy || submitting || navigationBusy} onClick={() => void retryModeration()}>重新 AI 筛选</Button>
-            )}
-            <Button
-              type="button"
-              variant="secondary"
-              loading={moderationBusy}
-              loadingLabel="正在更新"
-              disabled={submitting || navigationBusy}
-              icon={<ShieldWarning aria-hidden="true" />}
-              onClick={() => void setFiltered(item.moderationStatus !== "filtered")}
-            >
-              {item.moderationStatus === "filtered" ? "恢复留言" : "标记为已过滤"}
-            </Button>
+            <div className="studio-moderation-actions">
+              {item.replyCount === 0 && (item.moderationStatus === "failed" || item.moderationStatus === "pending") && (
+                <Button type="button" variant="secondary" disabled={moderationBusy || submitting || deletingReply || navigationBusy || liveSelectionPending} onClick={() => void retryModeration()}>重新 AI 筛选</Button>
+              )}
+              <Button
+                type="button"
+                variant="secondary"
+                loading={moderationBusy}
+                loadingLabel="正在更新"
+                disabled={submitting || deletingReply || navigationBusy || liveSelectionPending}
+                icon={<ShieldWarning aria-hidden="true" />}
+                onClick={() => void setFiltered(item.moderationStatus !== "filtered")}
+              >
+                {item.moderationStatus === "filtered" ? "恢复留言" : "标记为已过滤"}
+              </Button>
+              <LiveSelectionControl key={feedbackId} item={item}
+                disabled={moderationBusy || submitting || deletingReply || navigationBusy || replyPending || confirmOpen}
+                onPendingChange={setLiveSelectionPending}
+                onUpdated={value => setLoaded(current => current?.feedbackId === value.id ? { feedbackId: value.id, item: value } : current)} />
+            </div>
           </section>
         )}
 
         <ReplyHistory key={feedbackId} replies={replies}
-          disabled={submitting || moderationBusy || navigationBusy || replyPending}
+          disabled={submitting || moderationBusy || navigationBusy || replyPending || liveSelectionPending}
           onDelete={deleteReply} />
       </article>
 
@@ -803,7 +814,7 @@ export function FeedbackDetailPage() {
               {atEnd ? "已经是最后一条" : "下一条留言"}
             </Button>
           ) : (
-            <Button type="button" loading={submitting} disabled={deletingReply} loadingLabel="正在提交" icon={<PaperPlaneTilt aria-hidden="true" weight="fill" />} onClick={requestSubmit}>提交</Button>
+            <Button type="button" loading={submitting} disabled={deletingReply || liveSelectionPending} loadingLabel="正在提交" icon={<PaperPlaneTilt aria-hidden="true" weight="fill" />} onClick={requestSubmit}>提交</Button>
           )}
         </div>
       </section>

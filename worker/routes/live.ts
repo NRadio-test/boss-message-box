@@ -115,6 +115,11 @@ liveRoutes.post("/rotate", async c => {
   const batch = await new D1LiveRepository(c.env.BOSS_MESSAGE_DB).rotate({ ...input, adminId: c.get("studioSession").admin.id, now: Date.now() });
   return c.json({ ok: true, batch });
 });
+liveRoutes.post("/routing/:feedbackId/remove", async c => {
+  const input = parse(liveRotateSchema, await json(c.req.raw));
+  await new D1LiveRepository(c.env.BOSS_MESSAGE_DB).removeFeedback({ ...input, feedbackId: parse(uuid, c.req.param("feedbackId")), adminId: c.get("studioSession").admin.id, now: Date.now() });
+  return c.json({ ok: true });
+});
 liveRoutes.post("/entries/:entryId/remove", async c => {
   const input = parse(liveRotateSchema, await json(c.req.raw));
   await new D1LiveRepository(c.env.BOSS_MESSAGE_DB).remove({ ...input, entryId: parse(uuid, c.req.param("entryId")), adminId: c.get("studioSession").admin.id, now: Date.now() });

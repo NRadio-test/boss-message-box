@@ -102,6 +102,81 @@ function mockDetailApi() {
 }
 
 describe("Studio reply interaction", () => {
+  it("selects and cancels live display from the moderation row without losing the reply draft", async () => {
+    let selected = false;
+    const posts: Array<{ url: string; body: Record<string, string> }> = [];
+    vi.stubGlobal("fetch", vi.fn(async (input: string, init?: RequestInit) => {
+      if (input.endsWith("/live/active")) return Response.json({ ok: true, batch: { id: batchId } });
+      if (init?.method === "POST") {
+        posts.push({ url: input, body: JSON.parse(String(init.body)) });
+        selected = !input.endsWith("/remove");
+        return Response.json({ ok: true });
+      }
+      return Response.json({ ...detail, item: { ...detail.item, liveSelected: selected, routingStatus: selected ? "selected" : "pending" } });
+    }));
+    const user = userEvent.setup(); renderDetail(false);
+    await screen.findByRole("button", { name: "选入直播展示" });
+    const draft = screen.getByRole("textbox", { name: "回复内容" });
+    await user.type(draft, "未提交的草稿");
+    await user.click(screen.getByRole("button", { name: "选入直播展示" }));
+    await screen.findByRole("button", { name: "取消直播展示" });
+    expect(posts[0]).toMatchObject({ url: `/api/studio/live/routing/${feedbackId}`, body: { batchId, routingStatus: "selected" } });
+    await user.click(screen.getByRole("button", { name: "取消直播展示" }));
+    await screen.findByRole("button", { name: "选入直播展示" });
+    expect(posts[1]).toMatchObject({ url: `/api/studio/live/routing/${feedbackId}/remove`, body: { batchId } });
+    expect(posts[0]!.body.requestKey).not.toBe(posts[1]!.body.requestKey);
+    expect(draft).toHaveValue("未提交的草稿");
+  });
+
+  it("pins retries to the same live batch and key, locks conflicting actions, then only refreshes a saved mutation", async () => {
+    const bodies: unknown[] = [];
+    let activeReads = 0; let reads = 0; let release!: () => void;
+    vi.stubGlobal("fetch", vi.fn(async (input: string, init?: RequestInit) => {
+      if (input.endsWith("/live/active")) { activeReads++; return Response.json({ ok: true, batch: { id: batchId } }); }
+      if (init?.method === "POST") {
+        bodies.push(JSON.parse(String(init.body)));
+        if (bodies.length === 1) {
+          await new Promise<void>(resolve => { release = resolve; });
+          throw new Error("网络中断");
+        }
+        return Response.json({ ok: true });
+      }
+      if (++reads === 2) throw new Error("读取详情失败");
+      return Response.json({ ...detail, item: { ...detail.item, liveSelected: reads > 1 } });
+    }));
+    const user = userEvent.setup(); renderDetail(false);
+    await user.click(await screen.findByRole("button", { name: "选入直播展示" }));
+    await waitFor(() => expect(release).toBeTypeOf("function"));
+    expect(screen.getByRole("button", { name: "正在更新直播展示" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "标记为已过滤" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "提交" })).toBeDisabled();
+    release();
+    await user.click(await screen.findByRole("button", { name: "重试直播展示操作" }));
+    await screen.findByText(/读取详情失败/);
+    await user.click(screen.getByRole("button", { name: "重试直播展示操作" }));
+    await screen.findByRole("button", { name: "取消直播展示" });
+    expect(activeReads).toBe(1); expect(bodies).toHaveLength(2); expect(bodies[0]).toEqual(bodies[1]);
+    expect(screen.getByRole("button", { name: "标记为已过滤" })).toBeEnabled();
+  });
+
+  it("clears live selection when filtering and allows selection only after restoring", async () => {
+    let filtered = false;
+    vi.stubGlobal("fetch", vi.fn(async (_input: string, init?: RequestInit) => {
+      if (init?.method === "PUT") {
+        filtered = JSON.parse(String(init.body)).filtered;
+        return Response.json({ ok: true, moderationStatus: filtered ? "filtered" : "kept", isTodo: false });
+      }
+      return Response.json({ ...detail, item: { ...detail.item, liveSelected: true } });
+    }));
+    const user = userEvent.setup(); renderDetail(false);
+    await screen.findByRole("button", { name: "取消直播展示" });
+    await user.click(screen.getByRole("button", { name: "标记为已过滤" }));
+    expect(await screen.findByRole("button", { name: "选入直播展示" })).toBeDisabled();
+    expect(screen.getByText("请先恢复留言")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "恢复留言" }));
+    await waitFor(() => expect(screen.getByRole("button", { name: "选入直播展示" })).toBeEnabled());
+  });
+
   it("confirms deletion, retains the draft on failure and success, and updates the history", async () => {
     const reply = { id: "reply-delete", content: "需要删除的历史回复", replyType: "message", adminUsername: "fa", createdAt: Date.UTC(2026, 8, 3, 1) };
     let attempts = 0;
@@ -223,7 +298,7 @@ describe("Studio reply interaction", () => {
     expect(screen.getByText("申冤").closest("header")).toHaveClass("studio-live-identity");
     expect(screen.queryByText("主题", { exact: true })).not.toBeInTheDocument();
     expect(screen.getByRole("article", { name: "留言内容" })).toHaveTextContent("完整留言");
-    for (const hidden of ["未回复", "#22222222", "手机号", "1**********", "张导小店绑定手机号", "+853 6612-3456", "提交时间", "历史回复", "不应出现在直播画面的历史回复", "直播回复", "追加回复"]) {
+    for (const hidden of ["未回复", "#22222222", "手机号", "1**********", "张导小店绑定手机号", "+853 6612-3456", "提交时间", "历史回复", "不应出现在直播画面的历史回复", "直播回复", "追加回复", "选入直播展示", "取消直播展示"]) {
       expect(screen.queryByText(hidden)).not.toBeInTheDocument();
     }
     expect(screen.queryByRole("textbox")).not.toBeInTheDocument();

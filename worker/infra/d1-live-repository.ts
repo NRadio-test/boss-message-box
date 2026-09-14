@@ -140,6 +140,13 @@ export class D1LiveRepository {
     if (!old?.successor_id) throw new PublicError(404, "NOT_FOUND", "直播批次不存在");
     return this.batch(old.successor_id);
   }
+  async removeFeedback(input: { feedbackId: string; batchId: string; requestKey: string; adminId: string; now: number }): Promise<void> {
+    // Include removed entries so a retry can replay the original removal audit safely.
+    const entry = await this.db.prepare("SELECT id FROM live_entries WHERE feedback_id = ? AND batch_id = ?")
+      .bind(input.feedbackId, input.batchId).first<{ id: string }>();
+    if (!entry) throw new PublicError(409, "REQUEST_CONFLICT", "留言不在当前直播展示组，请刷新后重试");
+    await this.remove({ ...input, entryId: entry.id });
+  }
   async remove(input: { entryId: string; batchId: string; requestKey: string; adminId: string; now: number }): Promise<void> {
     if (await this.replayed(input.adminId, input.requestKey, "live_removed", input.entryId, input.batchId)) return;
     await this.requireActive(input.batchId);
