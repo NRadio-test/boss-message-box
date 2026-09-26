@@ -28,6 +28,7 @@ import { StudioService } from "../services/studio-service";
 import { createAiModerationService } from "../services/moderation-factory";
 import { readStudioExport } from "../infra/d1-studio-export";
 import { liveRoutes } from "./live";
+import { ultraPhotoRoutes } from "./ultra-photos";
 import { D1LiveRepository } from "../infra/d1-live-repository";
 
 const SESSION_COOKIE = "__Host-boss_studio_session";
@@ -166,6 +167,7 @@ studioRoutes.use("*", async (context, next) => {
 });
 
 studioRoutes.route("/live", liveRoutes);
+studioRoutes.route("/ultra-photos", ultraPhotoRoutes);
 
 studioRoutes.get("/session", (context) => {
   const session = context.get("studioSession");

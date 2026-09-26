@@ -9,6 +9,7 @@ import { SearchPage } from "./pages/SearchPage";
 import { UserDetailPage } from "./pages/UserDetailPage";
 import { LiveDisplayPage } from "./pages/LiveDisplayPage";
 import { ImportedDetailPage } from "./pages/ImportedDetailPage";
+import { UltraPhotosPage } from "./pages/UltraPhotosPage";
 import { StudioSessionProvider } from "./session";
 import { useStudioSession } from "./use-studio-session";
 import "./studio.css";
@@ -49,6 +50,7 @@ export function StudioApp() {
             <Route path="replied/message" element={<FeedbackListPage view="message" />} />
             <Route path="filtered" element={<FeedbackListPage view="filtered" />} />
             <Route path="todo" element={<FeedbackListPage view="todo" />} />
+            <Route path="ultra-photos" element={<UltraPhotosPage />} />
             <Route path="search" element={<SearchPage />} />
             <Route path="password" element={<PasswordPage />} />
             <Route path="feedback/:feedbackId" element={<FeedbackDetailPage />} />

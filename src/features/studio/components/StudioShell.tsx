@@ -3,6 +3,7 @@ import {
   Broadcast,
   CaretDown,
   CheckCircle,
+  Images,
   ListChecks,
   LockKey,
   MagnifyingGlass,
@@ -38,10 +39,17 @@ function StudioBrand() {
 
 function StudioNavigation({ afterNavigate }: { afterNavigate?: () => void }) {
   const location = useLocation();
+  const navigationRef = useRef<HTMLElement>(null);
   const repliedActive = location.pathname.startsWith("/studio/replied/");
   const [repliedOpen, setRepliedOpen] = useState(true);
+  useEffect(() => {
+    if (location.pathname === "/studio/ultra-photos") {
+      navigationRef.current?.querySelector("a.active")?.scrollIntoView({ block: "nearest" });
+    }
+  }, [location.pathname]);
   return (
     <nav
+      ref={navigationRef}
       className="studio-nav"
       aria-label="Studio 导航"
       onClick={(event) => {
@@ -72,6 +80,7 @@ function StudioNavigation({ afterNavigate }: { afterNavigate?: () => void }) {
       <NavLink to="/studio/moderation"><ShieldWarning aria-hidden="true" weight="bold" />AI 待处理</NavLink>
       <span className="studio-nav-label">处理</span>
       <NavLink to="/studio/todo"><ListChecks aria-hidden="true" weight="bold" />待办</NavLink>
+      <NavLink to="/studio/ultra-photos"><Images aria-hidden="true" weight="bold" />Ultra 到货照片</NavLink>
       <NavLink to="/studio/password"><LockKey aria-hidden="true" weight="bold" />修改密码</NavLink>
     </nav>
   );
@@ -104,8 +113,10 @@ export function StudioShell() {
   const liveExitRef = useRef(false);
   const chromeTimerRef = useRef<number | null>(null);
   const liveRequested = searchParams.get("mode") === "live";
+  const photoPage = location.pathname === "/studio/ultra-photos";
+  const photoLiveRequested = photoPage && liveRequested;
   const liveMode = liveRequested || mode === "live";
-  const liveModeReady = !liveRequested || mode === "live";
+  const liveModeReady = photoLiveRequested || !liveRequested || mode === "live";
   const chromeHidden = liveMode && !liveChrome.pinned && !chromeVisible;
 
   const scheduleChromeHide = useCallback(() => {
@@ -162,6 +173,8 @@ export function StudioShell() {
 
   useEffect(() => {
     if (modeActionRef.current) return;
+    // Photo presentation shares the stage/chrome, but does not start a feedback batch.
+    if (photoLiveRequested && mode === "normal") return;
     // Leaving live mode happens in two steps: navigate away, then flip the server-side mode.
     // Without this guard the effect re-adds ?mode=live during that gap, and the branch below
     // then flips the session straight back into live mode.
@@ -191,9 +204,10 @@ export function StudioShell() {
       next.set("mode", "live");
       setSearchParams(next, { replace: true, state: locationState });
     }
-  }, [liveRequested, location.pathname, locationState, mode, searchParams, setMode, setSearchParams]);
+  }, [liveRequested, photoLiveRequested, location.pathname, locationState, mode, searchParams, setMode, setSearchParams]);
 
   const enterLiveMode = async () => {
+    if (photoPage) { navigate("/studio/ultra-photos?mode=live"); return; }
     setChromeVisible(true);
     // Entering explicitly supersedes any exit that is still settling.
     liveExitRef.current = false;
@@ -248,14 +262,14 @@ export function StudioShell() {
     modeActionRef.current = true;
     liveExitRef.current = true;
     const returnContext = loadLiveReturn();
-    const destination = withoutLiveMode(returnContext?.url ?? "/studio/unreplied");
+    const destination = photoPage ? "/studio/ultra-photos" : withoutLiveMode(returnContext?.url ?? "/studio/unreplied");
     try {
       if (document.fullscreenElement) await document.exitFullscreen().catch(() => undefined);
       navigate(destination, {
         replace: true,
         state: { restoreContext: returnContext, searchRestore: returnContext?.search },
       });
-      await setMode("normal");
+      if (mode !== "normal") await setMode("normal");
       clearLiveReturn();
     } catch (error) {
       // The session never flipped, so the URL has to keep tracking live mode.

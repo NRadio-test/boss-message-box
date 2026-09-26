@@ -7,8 +7,8 @@ export interface LightboxImage {
   src: string;
   downloadUrl: string;
   alt: string;
-  width: number;
-  height: number;
+  width?: number;
+  height?: number;
 }
 
 interface LightboxProps {

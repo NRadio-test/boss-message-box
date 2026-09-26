@@ -8,6 +8,7 @@ declare global {
   namespace Cloudflare {
     interface Env {
       BOSS_MESSAGE_DB: D1Database;
+      BOSS_MESSAGE_IMAGES: R2Bucket;
       TEST_MIGRATIONS: D1Migration[];
     }
   }
