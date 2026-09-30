@@ -9,6 +9,7 @@
 - IP 查询与网站响应分开显示。普通网站不再套用不存在的 Trace 接口；无法跨域读取不直接判定为断网，不显示底层 HTTP 错误码。
 - 61 个 IP 节点自动检测（含 AI 工具、开发服务分类）：Cloudflare Trace、网易 / 字节响应头，以及腾讯 / 阿里 / Ping0 JSONP。24 个仅支持网站响应的项目单独展示。节点只代表所列域名，不代表供应商旗下所有产品。
 - 浏览器先显示真实出口 IP，再经 `/api/iptest/geo?ip=…` 补充国家、城市和运营商。按 IP 合并请求；服务失败不会覆盖 IP。Worker 只查询指定 IP 的归属地，不代替浏览器检测出口。
+- 站点返回的国家代码统一为大写，常见国家 / 地区名称会转换为国旗。归属地查询失败时，同轮检测中相同 IP 可共享一致的国家信息；冲突时保留各自结果，不推断城市或运营商，也不沿用上轮信息。未启用、限流和超时分别提示，未启用时需按下文配置生产供应商。
 - JSONP 在无同源权限的 sandbox iframe 中运行；校验消息来源和随机令牌。`/iptest-probe.html` 与 Cloudflare 的规范路径 `/iptest-probe` 均配置独立 CSP。
 - `/iptest` 和 `/iptest/` 单独允许 HTTPS 检测请求；入口和返回使用整页导航，确保分别加载对应 CSP。此规则遵循 [Cloudflare 静态资源响应头配置](https://developers.cloudflare.com/workers/static-assets/headers/)。
 

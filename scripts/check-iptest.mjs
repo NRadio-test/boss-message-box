@@ -84,11 +84,16 @@ try {
     assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth), false, `form overflow at ${width}`);
     await page.getByRole("button", { name: "取消", exact: true }).click();
   }
+  await page.route("**/api/iptest/geo?*", (route) => route.fulfill({ status: 503, json: { error: "GEO_NOT_CONFIGURED" } }));
   await page.goto(`${base}/iptest/`);
   await page.getByRole("heading", { name: "分流测试", exact: true }).waitFor();
+  await page.getByRole("button", { name: "重新检测", exact: true }).waitFor();
+  assert.equal(await page.locator(".iptest-result--ok").count(), 61);
+  assert.equal(await page.locator(".iptest-flag").filter({ hasText: "🇭🇰" }).count(), 61, "same IP should share country evidence when geolocation is not configured");
+  await page.getByText("归属地服务暂未启用，当前仅显示站点提供的地区信息，城市和运营商可能不完整。", { exact: true }).waitFor();
   const back = page.waitForResponse((response) => response.request().isNavigationRequest() && new URL(response.url()).pathname === "/");
   await page.getByRole("link", { name: "提交留言", exact: true }).click();
   assert.equal((await back).headers()["content-security-policy"], homePolicy);
   assert.deepEqual(errors, []);
-  console.log("PASS: production routing/CSP, footer placement, 61 exit probes (mocked responses), sandbox JSONP, geo deduplication, filters/search, custom persistence/delete, 6 responsive widths, return navigation.");
+  console.log("PASS: production routing/CSP, footer placement, 61 exit probes (mocked responses), sandbox JSONP, geo deduplication and country fallback, filters/search, custom persistence/delete, 6 responsive widths, return navigation.");
 } finally { await browser.close(); }

@@ -9,7 +9,14 @@ function resultLabel(result?: Result): string {
     case "queued": return "等待检测";
     case "loading": return "检测中…";
     case "stopped": return "已停止";
-    case "ok": return result.location || (result.geoStatus === "loading" ? "正在查询归属地…" : result.country ? locationName(result) : "归属地暂不可用");
+    case "ok": {
+      if (result.location || result.country) return locationName(result);
+      if (result.geoStatus === "loading") return "正在查询归属地…";
+      if (result.geoError === "not-configured") return "归属地服务暂未启用";
+      if (result.geoError === "rate-limited") return "查询较频繁，请稍后重试";
+      if (result.geoError === "timeout") return "归属地查询超时，可重测";
+      return "归属地暂不可用，可重测";
+    }
     default: return result.message || "暂时无法读取";
   }
 }
@@ -56,4 +63,3 @@ export function TargetRow({ target, result, running, onRetry, onRemove }: {
     </div>{copyState && <span className="iptest-copy-state" role="status">{copyState}</span>}</td>
   </tr>;
 }
-

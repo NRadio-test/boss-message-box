@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { createGeoLookup } from "./geo";
 import { browserProbe, type Result, type Target } from "./probe";
+import { shareIpRegions } from "./region";
 
 export function useProbes(initialTargets: Target[] = []) {
   const initial = useRef(initialTargets);
@@ -15,26 +16,31 @@ export function useProbes(initialTargets: Target[] = []) {
     const controller = new AbortController();
     active.current = controller;
     setRunning(true);
-    setResults((previous) => ({ ...(reset ? {} : previous),
-      ...Object.fromEntries(targets.map((target) => [target.id, { status: "queued" } as Result])),
-    }));
-    const lookupGeo = createGeoLookup(controller.signal);
+    const observations = Object.fromEntries(targets.map((target) => [target.id, { status: "queued" } as Result]));
+    setResults((previous) => ({ ...(reset ? {} : previous), ...observations }));
+    function publish(id: string, result: Result) {
+      observations[id] = result;
+      const shared = shareIpRegions(observations);
+      setResults((previous) => ({ ...previous, ...shared }));
+    }
+    const geoErrors = new Map<string, NonNullable<Result["geoError"]>>();
+    const lookupGeo = createGeoLookup(controller.signal, (ip, reason) => geoErrors.set(ip, reason));
     const enrichments: Promise<void>[] = [];
     let next = 0;
     async function worker() {
       while (next < targets.length && !controller.signal.aborted) {
         const target = targets[next++];
         if (!target) break;
-        setResults((previous) => ({ ...previous, [target.id]: { status: "loading" } }));
+        publish(target.id, { status: "loading" });
         const result = await browserProbe(target, controller.signal);
         if (active.current !== controller) return;
-        setResults((previous) => ({ ...previous, [target.id]: { ...result, geoStatus: result.ip ? "loading" : undefined } }));
+        publish(target.id, { ...result, geoStatus: result.ip ? "loading" : undefined });
         if (result.ip) enrichments.push(lookupGeo(result.ip).then((geo) => {
           if (active.current !== controller) return;
-          setResults((previous) => ({ ...previous, [target.id]: { ...result,
+          publish(target.id, { ...result,
             ...(geo ? { country: geo.country || result.country, location: geo.location || result.location,
               organization: geo.organization, geoProvider: geo.provider } : {}),
-            geoStatus: geo ? "ok" : "unavailable" } }));
+            geoStatus: geo ? "ok" : "unavailable", geoError: geo ? undefined : geoErrors.get(result.ip!) });
         }));
       }
     }

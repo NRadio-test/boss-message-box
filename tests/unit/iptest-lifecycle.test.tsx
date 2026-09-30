@@ -5,6 +5,27 @@ import type { Target } from "../../src/features/iptest/probe";
 const targets: Target[] = Array.from({ length: 9 }, (_, index) => ({ id: String(index), name: String(index), domain: "example.com", path: "/", method: "site", kind: "custom" }));
 afterEach(() => vi.unstubAllGlobals());
 
+it("backfills earlier rows from late country evidence without reusing it in a later run", async () => {
+  let finishTrace!: (response: Response) => void;
+  const reply = (body: string) => Object.defineProperty(new Response(body), "url", { value: "https://example.com/" });
+  const fetcher = vi.fn((url: string | URL) => {
+    if (String(url).startsWith("/api/iptest/geo")) return Promise.resolve(Response.json({ error: "GEO_NOT_CONFIGURED" }, { status: 503 }));
+    if (new URL(url).pathname === "/trace") return new Promise<Response>((resolve) => { finishTrace = resolve; });
+    return Promise.resolve(reply("1.1.1.1"));
+  });
+  vi.stubGlobal("fetch", fetcher);
+  const { result } = renderHook(useProbes);
+  const echo = { ...targets[0]!, method: "echo" as const };
+  act(() => { void result.current.run([echo, { ...targets[1]!, method: "trace", path: "/trace" }]); });
+  await waitFor(() => expect(result.current.results["0"]).toMatchObject({ ip: "1.1.1.1", geoError: "not-configured" }));
+  await act(async () => finishTrace(reply("ip=1.1.1.1\nloc=SG\n")));
+  await waitFor(() => expect(result.current.running).toBe(false));
+  expect(result.current.results["0"]).toMatchObject({ country: "SG", geoError: "not-configured" });
+  expect(fetcher.mock.calls.filter(([url]) => String(url).startsWith("/api/iptest/geo"))).toHaveLength(1);
+  await act(async () => { await result.current.run([echo]); });
+  expect(result.current.results["0"]?.country).toBeUndefined();
+});
+
 it("limits concurrency, stops queued work, and ignores late results from the old run", async () => {
   const pending: ((response: object) => void)[] = [];
   const fetcher = vi.fn(() => new Promise((resolve) => pending.push(resolve)));

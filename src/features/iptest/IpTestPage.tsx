@@ -95,6 +95,7 @@ export function IpTestPage() {
           <div className="iptest-actions"><Button variant="quiet" type="button" onClick={closeForm}>取消</Button><Button type="submit" disabled={running}>添加并检测</Button></div>
         </form>
         {storageNote && <p className="iptest-note" role="status">{storageNote}</p>}
+        {values.some((result) => result?.geoError === "not-configured") && <p className="iptest-note" role="status">归属地服务暂未启用，当前仅显示站点提供的地区信息，城市和运营商可能不完整。</p>}
         <div className="iptest-views" role="group" aria-label="检测内容">
           <button type="button" disabled={running} aria-pressed={view === "ip"} onClick={() => { setView("ip"); setFilter("all"); }}>出口 IP <span>{targets.filter((t) => t.method !== "site").length}</span></button>
           <button type="button" disabled={running} aria-pressed={view === "site"} onClick={() => { setView("site"); setFilter("all"); }}>网站响应 <span>{targets.filter((t) => t.method === "site").length}</span></button>

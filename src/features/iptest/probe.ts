@@ -1,5 +1,6 @@
 import { safeIp } from "../../shared/ip-address";
 import { jsonpProbe } from "./jsonp-probe";
+import { normalizeCountry, normalizeProbeRegion } from "./region";
 export { safeIp } from "../../shared/ip-address";
 
 export type Method = "trace" | "echo" | "ping0" | "headers" | "alibaba" | "tencent" | "site";
@@ -20,6 +21,7 @@ export interface Result {
   organization?: string;
   geoStatus?: "loading" | "ok" | "unavailable";
   geoProvider?: string;
+  geoError?: "not-configured" | "rate-limited" | "timeout" | "unavailable";
   message?: string;
   latency?: number;
 }
@@ -59,7 +61,7 @@ export function loadCustom(): Target[] {
 }
 
 function countryCode(value: unknown): string {
-  return typeof value === "string" && /^[a-z]{2}$/i.test(value) ? value.toUpperCase() : "";
+  return normalizeCountry(value) || "";
 }
 export function parseResponse(text: string, method: Method): Pick<Result, "ip" | "country" | "location"> {
   if (method === "ping0") {
@@ -111,7 +113,7 @@ export async function browserProbe(target: Target, signal: AbortSignal): Promise
     if (target.method === "alibaba" || target.method === "tencent" || target.method === "ping0") {
       const data = await jsonpProbe(target.method, controller.signal);
       const ip = safeIp(data.ip);
-      return ip ? { status: "ok", ip, location: data.location, latency: elapsed() }
+      return ip ? { status: "ok", ip, ...normalizeProbeRegion(data.location), latency: elapsed() }
         : { status: "unavailable", message: "未提供出口 IP", latency: elapsed() };
     }
     const url = new URL(endpoint(target));

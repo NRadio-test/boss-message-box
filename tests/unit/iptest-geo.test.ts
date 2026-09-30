@@ -5,6 +5,16 @@ import { browserProbe, type Target } from "../../src/features/iptest/probe";
 import { jsonpProbe } from "../../src/features/iptest/jsonp-probe";
 
 afterEach(() => { vi.unstubAllGlobals(); vi.useRealTimers(); });
+it.each([
+  [503, "GEO_NOT_CONFIGURED", "not-configured"],
+  [429, "RATE_LIMITED", "rate-limited"],
+  [503, "GEO_UNAVAILABLE", "unavailable"],
+])("reports a distinct geolocation failure for %s / %s", async (status, error, expected) => {
+  const onError = vi.fn();
+  vi.stubGlobal("fetch", vi.fn().mockResolvedValue(Response.json({ error }, { status })));
+  expect(await createGeoLookup(new AbortController().signal, onError)("1.1.1.1")).toBeNull();
+  expect(onError).toHaveBeenCalledWith("1.1.1.1", expected);
+});
 it("queries geolocation without modern AbortSignal helpers", async () => {
   vi.stubGlobal("AbortSignal", {});
   vi.stubGlobal("fetch", vi.fn().mockResolvedValue(Response.json({ ip: "1.1.1.1", country: "AU", provider: "IP.SB" })));

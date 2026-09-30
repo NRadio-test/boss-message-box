@@ -1,8 +1,10 @@
 import { safeIp } from "../../shared/ip-address";
 import type { GeoResult } from "../../shared/iptest-geo";
+import type { Result } from "./probe";
+import { normalizeCountry } from "./region";
 
 // One request per distinct exit IP per run, with a serial queue to respect provider limits.
-export function createGeoLookup(signal: AbortSignal) {
+export function createGeoLookup(signal: AbortSignal, onError?: (ip: string, reason: NonNullable<Result["geoError"]>) => void) {
   const pending = new Map<string, Promise<GeoResult | null>>();
   let queue: Promise<unknown> = Promise.resolve();
   return (ip: string) => {
@@ -18,13 +20,23 @@ export function createGeoLookup(signal: AbortSignal) {
         const response = await fetch(`/api/iptest/geo?ip=${encodeURIComponent(ip)}`, {
           signal: controller.signal, credentials: "omit", cache: "no-store",
         });
-        if (!response.ok) return null;
+        if (!response.ok) {
+          const data = await response.json().catch(() => null) as { error?: string } | null;
+          onError?.(ip, data?.error === "GEO_NOT_CONFIGURED" ? "not-configured" : response.status === 429 ? "rate-limited" : "unavailable");
+          return null;
+        }
         const data = await response.json() as GeoResult;
-        if (safeIp(data.ip) !== ip || !["IP.SB", "IPinfo"].includes(data.provider)) return null;
-        return { ip, country: typeof data.country === "string" && /^[A-Z]{2}$/.test(data.country) ? data.country : undefined,
+        if (safeIp(data.ip) !== ip || !["IP.SB", "IPinfo"].includes(data.provider)) {
+          onError?.(ip, "unavailable");
+          return null;
+        }
+        return { ip, country: normalizeCountry(data.country),
           location: typeof data.location === "string" ? data.location.slice(0, 600) : undefined,
           organization: typeof data.organization === "string" ? data.organization.slice(0, 200) : undefined, provider: data.provider };
-      } catch { return null; }
+      } catch {
+        if (!signal.aborted) onError?.(ip, controller.signal.aborted ? "timeout" : "unavailable");
+        return null;
+      }
       finally {
         clearTimeout(timeout);
         signal.removeEventListener("abort", cancel);
