@@ -35,3 +35,8 @@ RATE_LIMIT_HMAC_KEY=MzMzMzMzMzMzMzMzMzMzMzMzMzMzMzMzMzMzMzMzMzM=
 # ALIBABA_ACCESS_KEY_SECRET=replace-with-non-production-access-key-secret
 # ALIBABA_PNVS_SIGN_NAME=replace-with-pnvs-gift-sign-name
 # ALIBABA_PNVS_TEMPLATE_CODE=replace-with-pnvs-gift-template-code
+
+# IP geolocation: development defaults to keyless IP.SB for evaluation.
+# Production: set IPINFO_TOKEN using wrangler secret put IPINFO_TOKEN (IPinfo Core).
+# IPINFO_TOKEN=
+# IPTEST_GEO_PROVIDER=ipsb # production only after arranging IP.SB commercial use

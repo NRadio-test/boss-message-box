@@ -1,0 +1,562 @@
+{
+  "retrieved": "2026-09-30",
+  "purpose": "Website favicons for identifying the listed services; trademarks belong to their respective owners.",
+  "assets": {
+    "ipify": {
+      "domain": "ipify.org",
+      "url": "https://www.google.com/s2/favicons?domain=ipify.org&sz=64",
+      "sha256": "a812b6b5c3f056bcff640581a40df1d69ccced4c64ef443b41ef102b21dc1817",
+      "bytes": 1176,
+      "file": "ipify.jpg"
+    },
+    "aws": {
+      "domain": "aws.amazon.com",
+      "url": "https://www.google.com/s2/favicons?domain=aws.amazon.com&sz=64",
+      "sha256": "5563a89e162d5c5542f562c2b2e3148f4d7ed28fa3c14bc37d8df2b947afcc8a",
+      "bytes": 823,
+      "file": "aws.png"
+    },
+    "alibaba": {
+      "domain": "aliyun.com",
+      "url": "https://www.google.com/s2/favicons?domain=aliyun.com&sz=64",
+      "sha256": "b0b2306023dc0594031fc5fac06a228e08d347f0d6af6737db0f3a9044354173",
+      "bytes": 407,
+      "file": "alibaba.png"
+    },
+    "netease": {
+      "domain": "163.com",
+      "url": "https://www.google.com/s2/favicons?domain=163.com&sz=64",
+      "sha256": "e3d30f2f8a4925c45b8c00b04792a6fb7cbe0b84bf400661b54b1dc4c5c86119",
+      "bytes": 1181,
+      "file": "netease.png"
+    },
+    "tencent": {
+      "domain": "qq.com",
+      "url": "https://www.google.com/s2/favicons?domain=qq.com&sz=64",
+      "sha256": "8f766350feb39142a7c65735d5cdfc8728fb480d5dd959882d64e29faf08f6f7",
+      "bytes": 1327,
+      "file": "tencent.png"
+    },
+    "qualcomm": {
+      "domain": "qualcomm.com",
+      "url": "https://www.google.com/s2/favicons?domain=qualcomm.com&sz=64",
+      "sha256": "bdb62f2bd31838c6714c20d8fd24a8e3255582c0443658578a566c89ae5df0a0",
+      "bytes": 832,
+      "file": "qualcomm.png"
+    },
+    "npm": {
+      "domain": "npmjs.com",
+      "url": "https://www.google.com/s2/favicons?domain=npmjs.com&sz=64",
+      "sha256": "1670f448928e7cb6ae3398b34b56559863f5901ef379a37bc0c5410306c50108",
+      "bytes": 233,
+      "file": "npm.png"
+    },
+    "jsdelivr": {
+      "domain": "www.jsdelivr.com",
+      "url": "https://www.google.com/s2/favicons?domain=www.jsdelivr.com&sz=64",
+      "sha256": "223b220c3108305a1b7dcbe279a85e1272c458ccc748872f031c3230fffca51f",
+      "bytes": 1026,
+      "file": "jsdelivr.png"
+    },
+    "cloudflare": {
+      "domain": "www.cloudflare.com",
+      "url": "https://www.google.com/s2/favicons?domain=www.cloudflare.com&sz=64",
+      "sha256": "ca355c9a07606e132ccee66b3a99c869a7effb016449375de4a4f90025a0ce5f",
+      "bytes": 651,
+      "file": "cloudflare.png"
+    },
+    "apex": {
+      "domain": "www.ea.com",
+      "url": "https://www.google.com/s2/favicons?domain=www.ea.com&sz=64",
+      "sha256": "9dd1befbf68bbcf960843cadd0585c4ef960bd6217440d35c7d92c0a8463348a",
+      "bytes": 1197,
+      "file": "apex.png"
+    },
+    "deepseek": {
+      "domain": "www.deepseek.com",
+      "url": "https://www.google.com/s2/favicons?domain=www.deepseek.com&sz=64",
+      "sha256": "8b56b0e4a07cd0fd48c21ef61f0ad9373dc824bc4c8a1da7234ae6b410dd4a1a",
+      "bytes": 654,
+      "file": "deepseek.png"
+    },
+    "dockerhub": {
+      "domain": "www.docker.com",
+      "url": "https://www.google.com/s2/favicons?domain=www.docker.com&sz=64",
+      "sha256": "cbc025ef7ba73c8614886b757547f25d455089b761f6f7821c40af099609a02a",
+      "bytes": 471,
+      "file": "dockerhub.png"
+    },
+    "bytedance": {
+      "url": "https://cdn.jsdelivr.net/npm/simple-icons@16/icons/bytedance.svg",
+      "file": "bytedance.svg",
+      "sha256": "03a322949b34209cb0446382bbaf1c458eeffd75a6930f6bf37ca910578a6429",
+      "license": "CC0-1.0 (see SIMPLE-ICONS-LICENSE.txt)"
+    },
+    "ipinfo": {
+      "domain": "ipinfo.io",
+      "url": "https://www.google.com/s2/favicons?domain=ipinfo.io&sz=64",
+      "sha256": "a342a3db1cb9ca2e57b74acb64573eea1eaf6680502a84914fd55b8eabd82664",
+      "bytes": 793,
+      "file": "ipinfo.png"
+    },
+    "ping0": {
+      "domain": "ping0.cc",
+      "url": "https://www.google.com/s2/favicons?domain=ping0.cc&sz=64",
+      "sha256": "599d01dc1ede5a53632259998131cb80b11f876ab85b40e72b1c0adb022ca042",
+      "bytes": 495,
+      "file": "ping0.png"
+    },
+    "icanhazip": {
+      "error": "HTTP Error 404: Not Found",
+      "domain": "icanhazip.com"
+    },
+    "baidu": {
+      "domain": "www.baidu.com",
+      "url": "https://www.google.com/s2/favicons?domain=www.baidu.com&sz=64",
+      "sha256": "835c0625f1ad7ee8af1efe96d75990a316dc137ef6e44eec21241f12ff55d82d",
+      "bytes": 2678,
+      "file": "baidu.png"
+    },
+    "douyin": {
+      "domain": "www.douyin.com",
+      "url": "https://www.google.com/s2/favicons?domain=www.douyin.com&sz=64",
+      "sha256": "88497ffe773b63cbad1ae07f84167bf25f58b87ddbd1d57b5bbe0fec53493864",
+      "bytes": 827,
+      "file": "douyin.png"
+    },
+    "bilibili": {
+      "domain": "www.bilibili.com",
+      "url": "https://www.google.com/s2/favicons?domain=www.bilibili.com&sz=64",
+      "sha256": "76509004cc91c735db095cbd54554fbd27859b75e0d19e2f4e1322e90e06a383",
+      "bytes": 1664,
+      "file": "bilibili.jpg"
+    },
+    "zhihu": {
+      "domain": "www.zhihu.com",
+      "url": "https://www.google.com/s2/favicons?domain=www.zhihu.com&sz=64",
+      "sha256": "00098ffc95a7c862b386dd7d11deeeac18426e7ea0a662ea8d001d69e1a0bba9",
+      "bytes": 1202,
+      "file": "zhihu.png"
+    },
+    "jd": {
+      "domain": "jd.com",
+      "url": "https://icons.duckduckgo.com/ip3/jd.com.ico",
+      "file": "jd.png",
+      "sha256": "5481a53e7f6182a810b5d45ee7477c7229243cfb04101987ef6a3c59549f6cb2",
+      "note": "PNG payload extracted unchanged from the favicon ICO container."
+    },
+    "taobao": {
+      "domain": "www.taobao.com",
+      "url": "https://www.google.com/s2/favicons?domain=www.taobao.com&sz=64",
+      "sha256": "87e87986e57ec16bbbdc9ca5dbde0dde152f8f6935dba8fd84f28b7f3ecbe035",
+      "bytes": 1751,
+      "file": "taobao.jpg"
+    },
+    "v2ex": {
+      "domain": "www.v2ex.com",
+      "url": "https://www.google.com/s2/favicons?domain=www.v2ex.com&sz=64",
+      "sha256": "a20e1d84ec5b57dce52561880ddda9fe5e54355ea063aac3fd7e6b4a61f0da5a",
+      "bytes": 757,
+      "file": "v2ex.jpg"
+    },
+    "linuxdo": {
+      "domain": "linux.do",
+      "url": "https://www.google.com/s2/favicons?domain=linux.do&sz=64",
+      "sha256": "ec03435a161418b73b7276d38516a36ad38d7f880f826134b45b421ad289335d",
+      "bytes": 747,
+      "file": "linuxdo.png"
+    },
+    "chatgpt": {
+      "domain": "chatgpt.com",
+      "url": "https://www.google.com/s2/favicons?domain=chatgpt.com&sz=64",
+      "sha256": "3f90e318a3d4cc58fc178739351fc22afff8de8a66b04732f61929ed485d0af6",
+      "bytes": 4687,
+      "file": "chatgpt.png"
+    },
+    "claude": {
+      "domain": "claude.ai",
+      "url": "https://www.google.com/s2/favicons?domain=claude.ai&sz=64",
+      "sha256": "ebecb1947234b3c71ecd3ca54125cdc287b24a312bef0fd473d78a0bab491956",
+      "bytes": 1103,
+      "file": "claude.png"
+    },
+    "openai": {
+      "domain": "openai.com",
+      "url": "https://www.google.com/s2/favicons?domain=openai.com&sz=64",
+      "sha256": "2ff9b8cfca7058061442eb0fbf62141a1c15ebc64f4d4fc17137cbfdd4f753a5",
+      "bytes": 821,
+      "file": "openai.png"
+    },
+    "sora": {
+      "domain": "sora.com",
+      "url": "https://www.google.com/s2/favicons?domain=sora.com&sz=64",
+      "sha256": "49891036ec2533bfd134d76bbac40eb2241506a871b0079403552b2292bf5860",
+      "bytes": 1512,
+      "file": "sora.png"
+    },
+    "gemini": {
+      "domain": "gemini.google.com",
+      "url": "https://www.google.com/s2/favicons?domain=gemini.google.com&sz=64",
+      "sha256": "69ddb188bf3705889bd16c26f945efc878556cb5ae926a645fd33b3ec8e053ab",
+      "bytes": 1445,
+      "file": "gemini.png"
+    },
+    "perplexity": {
+      "domain": "www.perplexity.ai",
+      "url": "https://www.google.com/s2/favicons?domain=www.perplexity.ai&sz=64",
+      "sha256": "542e2d229286484ff219d7878333869e1e0ee615371de0c2e0369bf2d08b9803",
+      "bytes": 805,
+      "file": "perplexity.png"
+    },
+    "grok": {
+      "domain": "grok.com",
+      "url": "https://www.google.com/s2/favicons?domain=grok.com&sz=64",
+      "sha256": "750a591dab42ff96d8f8d4bd3fa89e3ad159bbb3d9d04850a333e813f40f7aac",
+      "bytes": 1006,
+      "file": "grok.png"
+    },
+    "poe": {
+      "domain": "poe.com",
+      "url": "https://www.google.com/s2/favicons?domain=poe.com&sz=64",
+      "sha256": "83dce54cd70655bc8b801a62dacb11c21a594e458b298b0589494af8fceb9e03",
+      "bytes": 2509,
+      "file": "poe.png"
+    },
+    "anthropic": {
+      "domain": "www.anthropic.com",
+      "url": "https://www.google.com/s2/favicons?domain=www.anthropic.com&sz=64",
+      "sha256": "22339486df29e1b7f1348062df8259ee6bcfbf93b3459436a6e4f2e3afb90ce2",
+      "bytes": 605,
+      "file": "anthropic.png"
+    },
+    "openrouter": {
+      "domain": "openrouter.ai",
+      "url": "https://www.google.com/s2/favicons?domain=openrouter.ai&sz=64",
+      "sha256": "e126ec3a2af1463796356f3b1e5574f986d19d8c067dc9036f36c32ce9220f4c",
+      "bytes": 651,
+      "file": "openrouter.png"
+    },
+    "replicate": {
+      "domain": "replicate.com",
+      "url": "https://www.google.com/s2/favicons?domain=replicate.com&sz=64",
+      "sha256": "4e6ddaaa4fb97573446058ee0ead8f752e7d46eea675688215c26f8962dfb1a5",
+      "bytes": 1639,
+      "file": "replicate.jpg"
+    },
+    "together": {
+      "domain": "together.ai",
+      "url": "https://www.google.com/s2/favicons?domain=together.ai&sz=64",
+      "sha256": "8d80c8843431f54a5c9800424b5ae3e622dcd96e4baa0d75ac0aff008f56f637",
+      "bytes": 686,
+      "file": "together.png"
+    },
+    "mistral": {
+      "domain": "mistral.ai",
+      "url": "https://www.google.com/s2/favicons?domain=mistral.ai&sz=64",
+      "sha256": "629301790349c8423505f8ddc0ae28c2c3bd395a6d6e6da5b13ed4d71bde5a3d",
+      "bytes": 377,
+      "file": "mistral.png"
+    },
+    "lechat": {
+      "domain": "chat.mistral.ai",
+      "url": "https://www.google.com/s2/favicons?domain=chat.mistral.ai&sz=64",
+      "sha256": "3d4849ce79826ef0ff0d28d7586021e75f937de7831cd3f2fa3f90eb2f5bd684",
+      "bytes": 379,
+      "file": "lechat.png"
+    },
+    "midjourney": {
+      "domain": "www.midjourney.com",
+      "url": "https://www.google.com/s2/favicons?domain=www.midjourney.com&sz=64",
+      "sha256": "255591f7bb201e04087dd474e04f4cb941032a2c3c46e3cea7f52ebda90c4a63",
+      "bytes": 777,
+      "file": "midjourney.png"
+    },
+    "suno": {
+      "domain": "suno.com",
+      "url": "https://www.google.com/s2/favicons?domain=suno.com&sz=64",
+      "sha256": "c4309be464d74be47892db444ab71c2263745b84b08a1908e081817c437a1050",
+      "bytes": 1796,
+      "file": "suno.png"
+    },
+    "gamma": {
+      "domain": "gamma.app",
+      "url": "https://www.google.com/s2/favicons?domain=gamma.app&sz=64",
+      "sha256": "b4169db40373a329c1fd2a65c6c14e745c22aac432b8a8aa87b9d1d7fa2a3419",
+      "bytes": 1010,
+      "file": "gamma.jpg"
+    },
+    "kimi": {
+      "domain": "www.kimi.com",
+      "url": "https://www.google.com/s2/favicons?domain=www.kimi.com&sz=64",
+      "sha256": "b1b734c5032296b3ed2ee027e034784ec3ccf30fd0be335ab6af227aef91465c",
+      "bytes": 1366,
+      "file": "kimi.jpg"
+    },
+    "nodejs": {
+      "domain": "nodejs.org",
+      "url": "https://www.google.com/s2/favicons?domain=nodejs.org&sz=64",
+      "sha256": "997ca968aaa60ddeecc6fd322ce4a041875cd88f6f3d0280e5eea93b1950859a",
+      "bytes": 1112,
+      "file": "nodejs.png"
+    },
+    "github": {
+      "domain": "github.com",
+      "url": "https://www.google.com/s2/favicons?domain=github.com&sz=64",
+      "sha256": "1a81fbfbf0a8efe0a8a9a16f0951e679dbbda131fe014a150176056199968e06",
+      "bytes": 519,
+      "file": "github.png"
+    },
+    "gitlab": {
+      "domain": "gitlab.com",
+      "url": "https://www.google.com/s2/favicons?domain=gitlab.com&sz=64",
+      "sha256": "6f192aeb55b257b3463300f2d1d3c17f2ddec1b07cea4ea90883e0836b10ee44",
+      "bytes": 742,
+      "file": "gitlab.png"
+    },
+    "bun": {
+      "domain": "bun.sh",
+      "url": "https://www.google.com/s2/favicons?domain=bun.sh&sz=64",
+      "sha256": "6852011e67219f281215c8731ed38e95f7d9603dfe7cdf0bf92350045cbd825e",
+      "bytes": 1239,
+      "file": "bun.png"
+    },
+    "stackoverflow": {
+      "domain": "stackoverflow.com",
+      "url": "https://www.google.com/s2/favicons?domain=stackoverflow.com&sz=64",
+      "sha256": "78882b9091351f3b4687745f6d68c498d091d41e8329da03bfa4b718aed788ba",
+      "bytes": 939,
+      "file": "stackoverflow.png"
+    },
+    "digitalocean": {
+      "domain": "www.digitalocean.com",
+      "url": "https://www.google.com/s2/favicons?domain=www.digitalocean.com&sz=64",
+      "sha256": "49f74cfd61489397a1a8cd951dba4b5333566b34e1ebb8832fc80473df50dd2c",
+      "bytes": 627,
+      "file": "digitalocean.png"
+    },
+    "render": {
+      "domain": "render.com",
+      "url": "https://www.google.com/s2/favicons?domain=render.com&sz=64",
+      "sha256": "e5260ad42d477073a50c7a1826df66182c6552ca102689a9afbabfd688dc9a7f",
+      "bytes": 257,
+      "file": "render.png"
+    },
+    "planetscale": {
+      "domain": "planetscale.com",
+      "url": "https://www.google.com/s2/favicons?domain=planetscale.com&sz=64",
+      "sha256": "619b1cd25a638e2f11364ba5723bff0081e77e5da907c528c65b7da27780f25a",
+      "bytes": 706,
+      "file": "planetscale.png"
+    },
+    "postman": {
+      "domain": "www.postman.com",
+      "url": "https://www.google.com/s2/favicons?domain=www.postman.com&sz=64",
+      "sha256": "45f9b9e098632420710078c239dd7e0e411ee2ee371b75569a78c2880a691dfb",
+      "bytes": 637,
+      "file": "postman.png"
+    },
+    "discord": {
+      "domain": "discord.com",
+      "url": "https://www.google.com/s2/favicons?domain=discord.com&sz=64",
+      "sha256": "d6bebf0b8d4bfdc948fc6deea925018801a8adc5f8fafe8f5937b6e100348940",
+      "bytes": 742,
+      "file": "discord.png"
+    },
+    "x": {
+      "domain": "x.com",
+      "url": "https://www.google.com/s2/favicons?domain=x.com&sz=64",
+      "sha256": "dde30d54d7be5fca3a28f148ef61af8f49ed99623d4f6e123ffb2e5e9d0cb8c6",
+      "bytes": 583,
+      "file": "x.png"
+    },
+    "tiktok": {
+      "domain": "www.tiktok.com",
+      "url": "https://www.google.com/s2/favicons?domain=www.tiktok.com&sz=64",
+      "sha256": "e421a9daf1ebd712bab3febecb1f93b765fbfc2b22d2c3b4231efe3203de2381",
+      "bytes": 953,
+      "file": "tiktok.png"
+    },
+    "visa": {
+      "domain": "www.visa.com",
+      "url": "https://www.google.com/s2/favicons?domain=www.visa.com&sz=64",
+      "sha256": "f9e3d3ad57aef06eae78e8b94d5eeb118547ee6e6293cef877b391f684852bf7",
+      "bytes": 338,
+      "file": "visa.png"
+    },
+    "google": {
+      "domain": "www.google.com",
+      "url": "https://www.google.com/s2/favicons?domain=www.google.com&sz=64",
+      "sha256": "a3c4d0d2afcd35129a5bf49002b8a0de4a23fdbf2bf20a77bc448d14c7a20404",
+      "bytes": 1063,
+      "file": "google.png"
+    },
+    "youtube": {
+      "domain": "www.youtube.com",
+      "url": "https://www.google.com/s2/favicons?domain=www.youtube.com&sz=64",
+      "sha256": "f4727a0fe90f724e5a7ba8d2facab29f516f81922beefb7d12ddc75e22cefb55",
+      "bytes": 548,
+      "file": "youtube.png"
+    },
+    "reddit": {
+      "domain": "www.reddit.com",
+      "url": "https://www.google.com/s2/favicons?domain=www.reddit.com&sz=64",
+      "sha256": "066900b1776b2eebae00be78ca7c26836f2622b2ed753db701589f960debe8d2",
+      "bytes": 1380,
+      "file": "reddit.png"
+    },
+    "netflix": {
+      "domain": "www.netflix.com",
+      "url": "https://www.google.com/s2/favicons?domain=www.netflix.com&sz=64",
+      "sha256": "330ddc5f685c74123ddaab4f2640f41df8ff65e58f8c374640e2aea5ec16b7dd",
+      "bytes": 1468,
+      "file": "netflix.png"
+    },
+    "notion": {
+      "domain": "www.notion.so",
+      "url": "https://www.google.com/s2/favicons?domain=www.notion.so&sz=64",
+      "sha256": "88b730df0cab66ffecc4df1227cb70855db1a7a3fdaf0d066c64fbce104d5457",
+      "bytes": 1511,
+      "file": "notion.png"
+    },
+    "deepl": {
+      "domain": "www.deepl.com",
+      "url": "https://www.google.com/s2/favicons?domain=www.deepl.com&sz=64",
+      "sha256": "562794921e25821b1d20ca0c5bd726a9b68c7139e48d6acc4049082edc905e09",
+      "bytes": 840,
+      "file": "deepl.png"
+    },
+    "quillbot": {
+      "domain": "quillbot.com",
+      "url": "https://www.google.com/s2/favicons?domain=quillbot.com&sz=64",
+      "sha256": "8dc9735b1906536d8465fd9692eb46d9123f4f37186ccfc3339f595a22790246",
+      "bytes": 548,
+      "file": "quillbot.png"
+    },
+    "signal": {
+      "domain": "signal.org",
+      "url": "https://www.google.com/s2/favicons?domain=signal.org&sz=64",
+      "sha256": "01fe5a9dd29db06d221f3fac760697705d18618d40c34a5fca548eb6b4d34383",
+      "bytes": 885,
+      "file": "signal.png"
+    },
+    "medium": {
+      "domain": "medium.com",
+      "url": "https://www.google.com/s2/favicons?domain=medium.com&sz=64",
+      "sha256": "242c2a5bf8c2e8c1035d0313ff3de067281a8ee5ac5cec56584981f9c8306666",
+      "bytes": 881,
+      "file": "medium.png"
+    },
+    "substack": {
+      "domain": "substack.com",
+      "url": "https://www.google.com/s2/favicons?domain=substack.com&sz=64",
+      "sha256": "afb3ff6d2b5117b380ac424ce48849b0f205656e8ec4d0739bd3a1fe2daadc7a",
+      "bytes": 1256,
+      "file": "substack.jpg"
+    },
+    "patreon": {
+      "domain": "www.patreon.com",
+      "url": "https://www.google.com/s2/favicons?domain=www.patreon.com&sz=64",
+      "sha256": "4e35fd1d15e5349fb59143fa25ebcde97ded5f31ca7ed75a7e28e75f55a8fd09",
+      "bytes": 542,
+      "file": "patreon.png"
+    },
+    "kofi": {
+      "domain": "ko-fi.com",
+      "url": "https://www.google.com/s2/favicons?domain=ko-fi.com&sz=64",
+      "sha256": "6f6463818f8a684a0d535fa6bf517332c62c36a5ee93c2b614d9472c02962a91",
+      "bytes": 1488,
+      "file": "kofi.png"
+    },
+    "speedtest": {
+      "domain": "www.speedtest.net",
+      "url": "https://www.google.com/s2/favicons?domain=www.speedtest.net&sz=64",
+      "sha256": "8d2bd9f30f06cfd874edb046e673ef7da26b3e696e26a703c6177be958553198",
+      "bytes": 844,
+      "file": "speedtest.png"
+    },
+    "udemy": {
+      "domain": "www.udemy.com",
+      "url": "https://www.google.com/s2/favicons?domain=www.udemy.com&sz=64",
+      "sha256": "fcb2382664d52dbc694708bbcc1975c350a8419e24315c565e6b0a494a00a803",
+      "bytes": 463,
+      "file": "udemy.png"
+    },
+    "shopify": {
+      "domain": "www.shopify.com",
+      "url": "https://www.google.com/s2/favicons?domain=www.shopify.com&sz=64",
+      "sha256": "ed0b9463cc12b3e07264e4737e4e252a344ee6e0bb6e401978cb186c680ad5e1",
+      "bytes": 1439,
+      "file": "shopify.png"
+    },
+    "unpkg": {
+      "domain": "unpkg.com",
+      "url": "https://www.google.com/s2/favicons?domain=unpkg.com&sz=64",
+      "sha256": "6ebcea2920001fd08c7ea100692be42e973e918afe8cfcfaf1a7f7cad34bb81c",
+      "bytes": 429,
+      "file": "unpkg.png"
+    },
+    "cs2": {
+      "domain": "www.counter-strike.net",
+      "url": "https://www.google.com/s2/favicons?domain=www.counter-strike.net&sz=64",
+      "sha256": "e264ceff4f8df8abe303f7c2b0794edbe05d9f03acc91f4beee659bd04cd24ef",
+      "bytes": 874,
+      "file": "cs2.png"
+    },
+    "delta-cn": {
+      "domain": "df.qq.com",
+      "url": "https://www.google.com/s2/favicons?domain=df.qq.com&sz=64",
+      "sha256": "7d64643f561a2546c2d220a861b743960c2f971fd2034c697f3958981017f532",
+      "bytes": 607,
+      "file": "delta-cn.png"
+    },
+    "delta-global": {
+      "domain": "www.playdeltaforce.com",
+      "url": "https://www.google.com/s2/favicons?domain=www.playdeltaforce.com&sz=64",
+      "sha256": "6444c8d2176bc7556cd300df1b5267fae87e31128bfb15a62abd8d3ab9136f03",
+      "bytes": 557,
+      "file": "delta-global.png"
+    },
+    "valorant-cn": {
+      "domain": "val.qq.com",
+      "url": "https://www.google.com/s2/favicons?domain=val.qq.com&sz=64",
+      "sha256": "5697c682dbff99ec538876a7f605beda2893a555c0c2bdd2a6f2867ef9c450e9",
+      "bytes": 534,
+      "file": "valorant-cn.png"
+    },
+    "valorant-global": {
+      "domain": "playvalorant.com",
+      "url": "https://www.google.com/s2/favicons?domain=playvalorant.com&sz=64",
+      "sha256": "619b5767dd1a9a062f4c65ecd90a89445cd630fcb2464d1b5cdc0e9fcc250102",
+      "bytes": 385,
+      "file": "valorant-global.png"
+    },
+    "pubg": {
+      "domain": "www.pubg.com",
+      "url": "https://www.google.com/s2/favicons?domain=www.pubg.com&sz=64",
+      "sha256": "4cbe396700790a94e3085f0d86bd17aded2a87c7c7e095da2bed1048126997b2",
+      "bytes": 1756,
+      "file": "pubg.png"
+    },
+    "fortnite": {
+      "domain": "www.fortnite.com",
+      "url": "https://www.google.com/s2/favicons?domain=www.fortnite.com&sz=64",
+      "sha256": "77b2d9f3de65da03a6b6812891443bbe76b66a0538fbfe58c1d25bef3b9bdf10",
+      "bytes": 904,
+      "file": "fortnite.jpg"
+    },
+    "lol-cn": {
+      "domain": "lol.qq.com",
+      "url": "https://www.google.com/s2/favicons?domain=lol.qq.com&sz=64",
+      "sha256": "fb8bce83d440c7caa5c7330daa43c2d816e841dc462f646c3a676175d51556bf",
+      "bytes": 830,
+      "file": "lol-cn.png"
+    },
+    "genshin-cn": {
+      "domain": "ys.mihoyo.com",
+      "url": "https://www.google.com/s2/favicons?domain=ys.mihoyo.com&sz=64",
+      "sha256": "1fb6b51fc16645cf23538c40a6f4484675995d7ff5588f4714ea27062cedb678",
+      "bytes": 712,
+      "file": "genshin-cn.jpg"
+    }
+  }
+}

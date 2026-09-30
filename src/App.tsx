@@ -6,11 +6,16 @@ const StudioApp = lazy(() =>
   import("./features/studio/StudioApp").then((module) => ({ default: module.StudioApp })),
 );
 
+const IpTestPage = lazy(() =>
+  import("./features/iptest/IpTestPage").then((module) => ({ default: module.IpTestPage })),
+);
+
 export default function App() {
   return (
     <BrowserRouter>
       <Suspense fallback={<div className="route-loading" aria-live="polite">正在打开…</div>}>
         <Routes>
+          <Route path="/iptest" element={<IpTestPage />} />
           <Route path="/studio/*" element={<StudioApp />} />
           <Route path="*" element={<PublicApp />} />
         </Routes>

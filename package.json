@@ -25,7 +25,8 @@
     "admin:create": "node scripts/admin-password.mjs --create",
     "admin:password": "node scripts/admin-password.mjs",
     "db:migrate:local": "wrangler d1 migrations apply BOSS_MESSAGE_DB --local",
-    "db:migrate:remote": "wrangler d1 migrations apply BOSS_MESSAGE_DB --remote"
+    "db:migrate:remote": "wrangler d1 migrations apply BOSS_MESSAGE_DB --remote",
+    "check:visual:iptest": "node scripts/check-iptest.mjs"
   },
   "engines": {
     "node": ">=22.13"

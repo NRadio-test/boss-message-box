@@ -1,159 +1,88 @@
 # 张导请回答
 
-一个用于收集、整理和处理观众留言的 Web 应用。项目包含面向观众的提交与查询页面，以及供内部人员使用的 Studio 工作台。
+留言收集与处理应用，包含公开留言页面、内部 Studio 工作台，以及合并后的分流测试 `/iptest`。使用 React、Vite、Cloudflare Workers、D1、R2 和 Images，统一构建与部署。
 
-## 开发环境
+## 本地开发
 
-项目使用 Node.js、pnpm 和 Cloudflare Workers。建议使用仓库 `.nvmrc` 指定的 Node.js 版本。
+使用 `.nvmrc` 指定的 Node.js 24 和 `package.json` 指定的 pnpm 版本。在本目录运行：
 
-```bash
+```sh
 nvm use
 corepack enable
 pnpm install --frozen-lockfile
 cp .dev.vars.example .dev.vars
 pnpm run db:migrate:local
-pnpm run admin:password --username zd --local
 pnpm dev
 ```
 
-本地配置请从 `.dev.vars.example` 开始，并为需要的密钥填写仅用于开发的值。`.dev.vars` 和任何真实凭据都不应提交到 Git。
+已有 `.dev.vars` 时保留现有配置，不要重复覆盖。该文件和真实凭据均已忽略，不应提交。
 
-首次使用需为管理员设置密码；命令会在终端中隐藏输入。登录后可在 Studio 的「修改密码」中更换密码，更换后所有旧会话失效。
+- `/`：提交留言；`/my`：查看自己的留言。
+- `/studio`：内部工作台。首次使用前，在另一个交互终端设置管理员密码：`pnpm run admin:password --username zd --local`。
+- `/iptest`：浏览器分流检测，显示站点 Logo、出口 IP、归属地与响应耗时；本地使用 IP.SB，无需 API Key。
 
-新增管理员账号使用同一套隐藏输入和 PBKDF2 密码散列流程；命令只把散列写入目标 D1，不把明文密码放进命令历史或仓库：
+新增管理员使用 `pnpm run admin:create --username <账号> --local`。管理员命令隐藏密码输入；管理线上账号时明确改用 `--remote`。
 
-```bash
-pnpm run admin:create --username <账号> --local
-pnpm run admin:create --username <账号> --remote
+## 提交前检查
+
+```sh
+pnpm run check           # 类型、Lint、单元测试、Worker 测试、对比度与生产构建
+pnpm preview --host 127.0.0.1 --port 5173
 ```
 
-本地与线上目标必须明确选择；新建命令遇到同名账号会停止，不会覆盖已有管理员密码。
+保持生产预览运行，在另一个终端执行：
 
-## 常用命令
-
-```bash
-pnpm dev                 # 启动本地开发服务器
-pnpm run typecheck       # TypeScript 检查
-pnpm run lint            # 代码规范检查
-pnpm test                # 运行测试
-pnpm run check           # 执行完整检查与生产构建
-pnpm run check:visual    # 执行响应式界面检查
-pnpm run check:visual:live        # 检查分流、导入与直播画面
-pnpm run check:visual:responsive  # 检查直播正文的宽度与文字缩放
-pnpm run check:visual:order       # 检查直播展示的排序界面
-pnpm run check:visual:reply       # 检查历史回复的删除界面
-pnpm run db:migrate:local
-pnpm run db:migrate:remote
-pnpm run deploy
+```sh
+pnpm run check:visual:iptest   # 分流测试、首页入口、CSP、筛选和响应式布局
 ```
 
-在应用远程数据库迁移前，请先备份数据并审阅尚未应用的迁移文件。生产环境变量和 Secrets 应通过 Cloudflare 配置，不要写入源码。
+其他常用命令：
 
-## 项目结构
+| 命令 | 用途 |
+|---|---|
+| `pnpm dev` | 本地开发与热更新 |
+| `pnpm test` | 单元与 Worker 集成测试 |
+| `pnpm run build` | 类型检查与生产构建 |
+| `pnpm run check:visual` | 公开页面的界面检查 |
+| `pnpm run check:visual:live` | Studio 分流、导入与直播检查 |
+| `pnpm run check:visual:responsive` | 直播正文尺寸与文字缩放 |
+| `pnpm run check:visual:order` | 直播顺序检查 |
+| `pnpm run check:visual:reply` | 历史回复删除检查 |
 
-```text
-src/                  前端应用
-worker/               Worker API 与服务端逻辑
-migrations/           D1 数据库迁移
-tests/unit/            单元测试
-tests/worker/          Worker 与 D1 集成测试
-scripts/               项目检查脚本
-public/                静态资源
-```
+界面脚本通常使用模拟数据，不代表外部站点实时可用。截图输出到已忽略的 `test-results/`。
 
-视觉与交互调整应遵循 `DESIGN_SYSTEM.md`。新增功能时请保持公开端与 Studio 的职责边界，并在提交前运行 `pnpm run check`。
+若使用 Node.js 26 且遇到测试环境的 `localStorage` 冲突，优先切回 Node.js 24，也可临时运行 `NODE_OPTIONS=--no-experimental-webstorage pnpm run check`。
 
 ## 部署
 
-项目通过 Cloudflare Workers 运行，并使用 D1、R2、Images 等绑定。具体资源名称、绑定和非敏感运行变量以 `wrangler.jsonc` 为准；Secret 名称与本地开发占位项以 `.dev.vars.example` 为准。
+资源绑定与非敏感变量见 `wrangler.jsonc`，本地配置模板见 `.dev.vars.example`。生产 Secret 通过 Cloudflare 配置。
 
-部署前至少确认：
+1. 备份远程数据库，并审阅尚未应用的迁移。
+2. 确认 D1、R2、Images、运行变量和 Secret 均已配置。
+3. 运行 `pnpm run check` 及受影响页面的界面检查。
+4. 执行 `pnpm run db:migrate:remote`，随后执行 `pnpm run deploy`。
 
-- 远程数据库已备份，待应用的迁移已经审阅；
-- Cloudflare 资源与 `wrangler.jsonc` 中的绑定一致；
-- 运行时 Secrets 已配置且未进入 Git；
-- `pnpm run check` 完整通过。
+不要重放已执行的历史迁移；`0004` 包含历史数据重置操作。各项 Studio 功能对应的迁移见[业务与运维说明](docs/studio.md)。
 
-随后按当前部署流程发布代码。管理员凭据、生产数据处理规则及其他内部运维信息不在 README 中维护。
+分流测试与留言板一起部署到 `/iptest`，无需 Python 或第二个服务。**生产归属地查询需要额外配置**：推荐用 `pnpm exec wrangler secret put IPINFO_TOKEN` 设置具有城市查询权限的 IPinfo Core Token；已有 IP.SB 商业授权时可配置 `IPTEST_GEO_PROVIDER=ipsb`。未配置时出口 IP 与响应耗时仍可检测，归属地不可用。详见[分流测试说明](docs/iptest.md)。
 
-`0005` 迁移保留现有账号和留言，但会禁用仍使用旧初始密码的账号。需要时使用 `pnpm run admin:password --username <账号> --remote` 设置新密码。已自行更换密码的账号不受此迁移影响。
+## 代码与文档
 
-### 删除历史回复
+```text
+src/                     前端应用
+  features/iptest/        分流测试页面、节点与浏览器检测
+  shared/                前后端共享类型与解析
+worker/                  API、业务逻辑、存储与定时维护
+migrations/              D1 增量迁移
+tests/unit/              单元测试
+tests/worker/            Worker 与 D1 集成测试
+scripts/                 开发、管理与界面检查脚本
+public/                  静态资源、站点图标与 CSP
+docs/                    功能与运维说明
+```
 
-- 普通 Studio 留言详情的每条历史回复，在时间下方提供“删除回复”。确认后只删除该条回复，不改动观众留言、图片、手机号、审核、分流和直播批次。
-- 回复条数、最后回复人、分类统计、公开历史与后续导出都按剩余回复重新计算；删除最后一条后不再归为已回复，已过滤留言保持过滤。未提交的回复草稿保留，失败可就地重试。
-- `DELETE /api/studio/feedbacks/:feedbackId/replies/:replyId` 要求登录、同源请求和普通模式，直播模式禁止删除。删除与审计记录在同一事务中写入，同一删除可安全重试。
-- 发布前先应用 `0011_reply_deletion.sql` 再发布代码，该迁移只新增表和索引。`reply_deletions` 只保留回复标识、原创建请求标识、原回复人、删除人和时间，不保留正文，用于审计并阻止延迟到达的创建请求把回复写回；删除同样兼容历史迁移回复，会一并清除旧回复字段。
+- [分流测试](docs/iptest.md)：检测方式、数据来源、供应商配置与站点维护。
+- [Studio 业务与运维](docs/studio.md)：留言处理、导出、Excel 导入、分流和直播批次。
+- [设计规范](DESIGN_SYSTEM.md)：共用色板、组件、布局和交互。
 
-### 留言导出与小店绑定手机号
-
-- 用户提交页可选填“张导小店绑定手机号”，不限制国家或号码格式。普通 Studio 详情直接显示，直播模式不显示；旧留言显示“未填写”。
-- 发布此版本前需要应用 `0006_feedback_shop_phone.sql`，新增可空列，不修改已有留言内容。数据库迁移与代码发布应配套执行；本地测试通过不代表已应用远程迁移。
-- 普通 Studio 列表的“导出留言”支持当前分类与主题的所有页，或全部留言（含已过滤）；可选 Excel `.xlsx` 和 Markdown `.md`。
-- Excel 将留言、全部回复、图片链接分别整理，手机号按文本保留 `+` 和前导零；MD 适合阅读与知识库整理。两种格式均包含小店手机号，图片仅为登录后可访问的链接，不包含图片文件。
-- 导出固定最新记录的上界并分批读取；导出过程中被修改的状态和回复以各批读取时为准。失败不会下载不完整结果，可取消或重试。
-
-短信入口由 `OTP_ENABLED` 控制，当前默认关闭。AI 筛选异步执行，失败时保留留言，并通过定时任务有限重试；Studio 也支持人工重试。`AI_THINKING` 仅用于支持该参数的提供方。服务端整次上传的资源保护上限为 32 MiB。
-
-### 留言分流与直播批次
-
-直播分流由 `0007_live_routing.sql`、`0008_import_routing.sql` 与 `0009_live_cancel_returns_to_routing.sql` 引入。`0007` 新增分流列、直播批次、展示快照、导入任务及审计记录；`0008` 为 Excel 行补充 AI 分类与人工分流状态，并把新导入的自动入播改成人工选入；`0009` 让取消直播展示的观众留言和 Excel 行退回待分流，并允许 Excel 行在退回后重新选入当前或后续批次。迁移不清空留言、回复、管理员或图片；升级前已进入直播批次的 Excel 行继续保留原批次与历史状态。旧的 AI 保留且未回复留言默认进入“待分流”；已回复留言不会自动取得直播资格。部署前应单独审阅远程已应用的迁移：`0004` 含历史重置操作，不要把全套旧迁移当作升级脚本重新执行。
-
-业务维度独立维护：
-
-- `moderation_status`：`pending / kept / filtered / failed`；失败或待审核记录在“AI 待处理”中重试或人工恢复。
-- `routing_status`：`pending / selected / not_selected`；审核保留后先待分流，选择加入或不加入直播后才进入普通未回复；从直播展示取消时恢复为 `pending`，因此同时离开直播展示和未回复并回到待分流。
-- 回复状态：从 `feedback_replies` 派生，公开端只返回 `replied / unreplied`，不暴露内部审核或分流状态。
-- `source_type`：`public / imported`；Excel 原始行与分类结果只保存在内部导入表，人工选入后才生成 `live_entries` 快照，没有虚构的公开身份或手机号。
-- `live_batches`：唯一 `active` 批次和只读 `archived` 批次。展示资格与回复状态独立，回复后仍可在本批次播放。
-
-`replyType=live` 仍指“直播回复”的历史分类，`mode=live` 指全屏展示模式，`view=live_display` 才是新直播展示组，三者不互相推断。
-
-默认顺序：开播前按原始提交时间、稳定 ID 排列；第一次进入直播模式后固定已有队列，之后新选入的留言追加队尾，即使其原始时间更早。Excel 以任务创建时间记入来源时间；开播前选入的同一任务按原始行号播放，AI 完成先后不改变行序；开播后按管理员实际选入顺序追加。管理员手动调整顺序后见下一节。
-
-播放行为：右方向键前进、左方向键回看；直播只读当前批次，不读普通未回复或待办。批次或成员版本变化时清空详情与相邻缓存，活动画面每 4 秒核对版本，空批次每 5 秒等待新留言。普通模式下，侧栏左下的“直播展示模式”在所有 Studio 页面都可进入当前活动批次，历史批次选择不会限制这个全局入口。
-
-“刷新直播展示组”需确认当前条数，再在一个 D1 事务中归档旧批次、记录操作者和时间、建立新的空批次。数据库唯一索引与旧批次身份比较共同防止双击、重试或并发创建多个活动批次。不会删除任何历史记录。直播展示页面用 UTC+8 的刷新时间筛选历史，批次写入 URL；历史只读，不能进入直播模式。“取消直播展示”只软移除当前成员并留审计，同时清除待办并把观众留言或 Excel 行退回待分流；重新选入后恢复为未回复与直播展示的现行状态，归档后不再改动历史成员。
-
-### 管理员自定义展示顺序
-
-- 点击整张留言卡片进入详情，不再显示单独的查看链接行。正文默认折叠三行，可就地展开/收起；来源行右侧显示真实回复条数（绿色“已回复·一条 / 两条 / …”）或黄色“未回复”。详情返回和浏览器后退会恢复卡片位置及展开状态，保留分页和批次；排序、展开与取消展示按钮独立操作。
-- 此项界面及回复计数改进无需新增数据库迁移。普通列表读取 `feedback_replies` 的实时计数，不改变展示快照或直播模式的隐私边界。验证脚本 `node scripts/check-live-cards.mjs` 使用本地模拟数据检查 375/768/1280px、整卡点击、第八条返回及分页；可设置 `VISUAL_TEXT_SCALE=200` 检查 768px 放大文字。
-
-- 需要应用增量迁移 `0010_live_custom_order.sql`：新增排序列、追加触发器与排序审计表，不改写已有留言、回复和来源时间。未排序的批次继续遵守上一节的默认规则。
-- 普通模式的“直播展示 → 当前批次”是单列编号列表，每条左侧是序号导轨：序号可直接改写为目标位置，下方是上移 / 下移。序号是整个批次的序号，跨页有效；调整后自动保存并跟随到目标页。历史批次只读，保留导轨但只显示序号。
-- 手动排序会把当前队列整体固定下来，之后新加入或重新加入的留言（观众留言与 Excel 行）追加到末尾，不改变直播资格、回复状态和原始时间。队列清空后重新选入的留言回到默认规则。
-- 保存期间锁定其他排序、取消、批次选择与分页。网络失败可“重试保存”；若其他管理员已改变顺序、增减成员或刷新批次，旧请求不会覆盖新状态，需“重新加载列表”后再操作。
-- 直播画面的首条、上一条、下一条与管理列表共用同一顺序。已打开的画面每 4 秒发现版本变化后清空预加载缓存，再按新顺序翻页，不会打断正在展示的留言。
-
-### Excel 导入与恢复
-
-- 只接受 `.xlsx` 第一张工作表中的“用户名”和“用户留言”两列；前后端都校验文件最多 2 MiB、最多 500 行，用户名按公开昵称规则最多 40 字符，正文最多 2000 字符。不能静默截断，公式单元格拒绝导入。
-- 浏览器先预览有效、无效和空白行，明确错误原因。确认后上传原文件，Worker 再解析、验证 SHA-256，只存有效行和必要来源字段；原文件及无关单元格不落库、不存 R2。压缩包展开声明上限 16 MiB。
-- 复用 Worker 的 `AI_BASE_URL / AI_API_KEY / AI_MODEL / AI_THINKING` 做五类主题分类；`other` 必须有具体且不超过 60 字符的 `custom_topic`。AI 不能改写昵称或原文；无效分类标记失败，不回填假分类。
-- 导入入口、任务恢复和 Excel 待分流行都位于 Studio“待分流”页。AI 分类成功只把该行置为待分流，不会自动加入直播；管理员逐行选择“加入直播展示 / 不加入直播展示”后，该行才离开待分流。两种选择都不会把 Excel 数据放进普通未回复或公开历史。
-- 点击 Excel 待分流卡片、导入任务行，或直播展示里的“查看留言详情”，可查看完整原文、用户名、分类、来源文件、行号和导入时间。详情支持刷新与直接打开；返回列表保留批次、分页和筛选。复用现有导入任务与直播快照接口，无新增数据库迁移。
-- D1 保存任务与逐行状态，通过全局最多 3 个并发租约处理。页面轮询推进任务，已有分钟定时任务也会恢复后台工作；中断租约最多自动恢复 5 次，失败后可逐行或批量手动重试。
-- 同批次文件哈希去重，任务 ID 与有效行内容哈希校验冲突；同一 Excel 行在每个直播批次最多保留一份展示快照，退回待分流后可再次选入当前或后续批次。重试只重新处理失败行，分流请求也使用幂等键，不重复创建展示记录。页面刷新后可从任务选择器或 `job` URL 恢复进度。
-- 批次归档会立即将尚未完成 AI 分类的行标记为 `batch_archived`；迟到的 AI 响应不能写入旧批次或新批次。归档前已分类但尚未分流的行继续保留在待分流，可人工选入届时的当前活动批次；历史失败记录保留。
-
-新增 API 均位于 `/api/studio/live`：
-
-| 方法 | 路径 | 用途 |
-|---|---|---|
-| GET | `/active`、`/batches` | 当前批次、历史批次选项 |
-| GET | `/entries?batchId=&page=`、`/entries/:entryId?batchId=` | 批次列表和快照详情 |
-| GET | `/sequence?batchId=&currentId=&direction=` | 当前直播序列起点及左右相邻 |
-| POST | `/routing/:feedbackId` | 人工选入或不选入 |
-| POST | `/entries/:entryId/remove`、`/rotate` | 取消资格、刷新归档 |
-| POST / GET | `/imports` | 确认上传、按批次读取任务列表 |
-| GET | `/imports/routing?page=&topic=` | 读取已分类的 Excel 待分流行 |
-| GET | `/imports/:jobId` | 逐行进度与错误 |
-| POST | `/imports/:jobId/retry`、`/imports/:jobId/resume` | 失败行重试、推进未完成工作 |
-| POST | `/imports/:jobId/rows/:rowNumber/routing` | 人工选入或不选入 Excel 行 |
-
-所有接口要求认证并返回 `Cache-Control: private, no-store`；所有写入校验 Same-Origin 和 normal-mode，会话权限不依赖管理员用户名。历史和导入任务仅 normal-mode 可读；序列仅 live-mode 可读，旧的普通留言直播序列入口拒绝使用。
-
-界面检查使用模拟数据；实际 XLSX 解析、排序事务与并发冲突另由单元及 Worker 集成测试覆盖。
-
-直播正文会铺满可用正文列，并按窗口宽高、实际换行和内容长度测量字号；短文自动放大，长文达到可读字号下限后可滚动读完。手机竖屏将图片放在正文下方，桌面和短横屏保留右侧图片；昵称与主题整体可聚焦滚动。此部分无需新增数据库迁移，部署后刷新页面即可。
+`split-tunnel-lab` 的旧入口仅保留迁移指引与启动脚本。本项目已包含全部运行代码，不需要旧目录。

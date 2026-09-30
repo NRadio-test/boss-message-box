@@ -734,6 +734,16 @@ dialog[data-dialog-fallback][open] {
 .receipt-id code { color: var(--color-accent); font-family: var(--font-mono); font-size: var(--type-body-lg); letter-spacing: 0.08em; }
 .success-actions { display: grid; gap: var(--space-3); margin-block-start: var(--space-8); }
 
+.site-utility {
+  display: flex;
+  justify-content: center;
+  padding-block: var(--space-2) var(--space-5);
+  color: var(--color-text-muted);
+  font-size: var(--type-caption);
+}
+.site-utility a { display: inline-flex; align-items: center; min-height: 2.75rem; padding-inline: var(--space-4); text-decoration: none; }
+.site-utility a:hover { color: var(--color-accent); text-decoration: underline; text-underline-offset: 0.25em; }
+
 .site-footer {
   display: flex;
   align-items: center;

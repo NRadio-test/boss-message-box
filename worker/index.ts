@@ -22,6 +22,7 @@ import {
 import { R2ImageStorage } from "./infra/r2-image-storage";
 import { createSmsProvider, resolveDevelopmentOtpCode } from "./providers/sms";
 import { CloudflareTurnstileVerifier } from "./providers/turnstile";
+import { iptestRoutes } from "./routes/iptest";
 import { studioRoutes } from "./routes/studio";
 import { WebCryptoPhoneService } from "./security/crypto";
 import { readFeedbackForm } from "./security/feedback-body";
@@ -103,6 +104,8 @@ app.get("/api/config", (context) =>
     livestreamPolicyVersion: context.env.LIVESTREAM_POLICY_VERSION,
   }),
 );
+
+app.route("/api/iptest", iptestRoutes);
 
 app.get("/api/health", (context) => context.json({ ok: true }));
 

@@ -19,6 +19,8 @@ export interface Env {
   ALIBABA_ACCESS_KEY_SECRET?: string;
   ALIBABA_PNVS_SIGN_NAME?: string;
   ALIBABA_PNVS_TEMPLATE_CODE?: string;
+  IPINFO_TOKEN?: string;
+  IPTEST_GEO_PROVIDER?: "ipsb";
   AI_BASE_URL?: string;
   AI_API_KEY?: string;
   AI_MODEL?: string;
